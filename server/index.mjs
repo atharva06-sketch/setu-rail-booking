@@ -376,8 +376,10 @@ if (fs.existsSync(dist)) {
   });
 }
 
-app.listen(PORT, "127.0.0.1", () => {
-  console.log(`Rail Bandhu API on http://127.0.0.1:${PORT}`);
+const HOST = process.env.HOST || "0.0.0.0";
+
+app.listen(PORT, HOST, () => {
+  console.log(`Rail Bandhu API on http://${HOST}:${PORT}`);
   console.log(`  IRCTC fares/availability: ${IRCTC_API_KEY ? "enabled" : "not configured"}`);
   console.log(`  Email mode: ${emailMode()}`);
   warmUpEmail();

@@ -2691,6 +2691,26 @@ export default function TrainBooking() {
             )}
           </div>
         </div>
+        <div
+          style={{
+            maxWidth: 1000,
+            margin: "0 auto",
+            padding: "0 20px 14px",
+            fontFamily: FONT_MONO,
+            fontSize: 10,
+            color: "#9AAAB8",
+            letterSpacing: ".02em",
+          }}
+          className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-center"
+          aria-label="Developed by Gajendra Sharma, Atharva Khotele and Sanskar Shukla"
+        >
+          <span>Developed by</span>
+          <span style={{ color: MUTED, fontWeight: 600 }}>Gajendra Sharma</span>
+          <span aria-hidden="true">·</span>
+          <span style={{ color: MUTED, fontWeight: 600 }}>Atharva Khotele</span>
+          <span aria-hidden="true">·</span>
+          <span style={{ color: MUTED, fontWeight: 600 }}>Sanskar Shukla</span>
+        </div>
       </footer>
     </div>
   );

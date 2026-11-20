@@ -496,7 +496,6 @@
        irctc: boolean,
        email: boolean,
        emailMode: "smtp" | "emailjs" | "ethereal" | "none",
-       railradar: true,
        time: ISO string
      }
    Used by the UI to label the active modes.

@@ -3,9 +3,11 @@ import { Clock, RefreshCw, TrainFront } from "lucide-react";
 import {
   friendlyApiError,
   getStationLive,
+  HAS_API_KEY,
   type StationLiveData,
   type StationLiveTrain,
 } from "@/lib/railradar";
+import { buildDemoStationBoard } from "@/lib/demo";
 import { AMBER, BLUE_DARK, BLUE_LIGHT, FONT_MONO, GREEN, LINE, MUTED, RED, TEXT } from "@/theme";
 
 function isoTime(value?: string | null): string {
@@ -48,14 +50,27 @@ export default function StationBoard({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [updatedAt, setUpdatedAt] = useState<string>("");
+  const [demo, setDemo] = useState(false);
 
   const load = useCallback(
     async (force = false) => {
       setLoading(true);
       setError(null);
+
+      if (!HAS_API_KEY) {
+        setData(buildDemoStationBoard(stationCode, stationName, hours));
+        setDemo(true);
+        setUpdatedAt(
+          new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false })
+        );
+        setLoading(false);
+        return;
+      }
+
       try {
         const result = await getStationLive(stationCode, hours, force);
         setData(result);
+        setDemo(false);
         setUpdatedAt(
           new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false })
         );
@@ -65,7 +80,7 @@ export default function StationBoard({
         setLoading(false);
       }
     },
-    [hours, stationCode]
+    [hours, stationCode, stationName]
   );
 
   useEffect(() => {
@@ -76,9 +91,24 @@ export default function StationBoard({
     <div className="card" style={{ padding: 20 }}>
       <div className="flex flex-wrap items-start justify-between gap-3 mb-1">
         <div>
-          <div className="flex items-center gap-2">
-            <span className="live-dot" />
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="live-dot" style={{ background: demo ? AMBER : undefined }} />
             <h3 style={{ fontSize: 16, fontWeight: 600, margin: 0 }}>Live station board</h3>
+            {demo && (
+              <span
+                style={{
+                  fontSize: 10,
+                  fontWeight: 600,
+                  color: "#8A5A00",
+                  background: "#FDF4E3",
+                  border: "1px solid #F3D9A5",
+                  borderRadius: 3,
+                  padding: "2px 6px",
+                }}
+              >
+                DEMO BOARD
+              </span>
+            )}
           </div>
           <p style={{ fontSize: 12, color: MUTED, margin: "4px 0 0" }}>
             {stationName} ({stationCode}) · arrivals &amp; departures · times in IST
@@ -226,7 +256,9 @@ export default function StationBoard({
 
       <div className="flex items-center gap-1" style={{ marginTop: 12, fontSize: 10, color: "#9AAAB8" }}>
         <Clock size={11} />
-        Live data from RailRadar · auto-refreshes when you reopen this page
+        {demo
+          ? "Bundled demo board · no API key required"
+          : "Live data from RailRadar · auto-refreshes when you reopen this page"}
       </div>
     </div>
   );

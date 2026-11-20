@@ -11,6 +11,7 @@
     "dev:api": "node server/index.mjs",
     "dev:all": "concurrently -k -n web,api -c cyan,magenta \"npm:dev\" \"npm:dev:api\"",
     "build": "vite build",
+    "prestart": "npm run build",
     "start": "node server/index.mjs",
     "lint": "eslint .",
     "preview": "vite preview",

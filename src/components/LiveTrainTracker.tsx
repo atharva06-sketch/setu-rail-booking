@@ -14,9 +14,11 @@ import {
 import {
   friendlyApiError,
   getLiveTrain,
+  HAS_API_KEY,
   type LiveRouteStop,
   type LiveTrainData,
 } from "@/lib/railradar";
+import { buildDemoLiveTrain } from "@/lib/demo";
 import { AMBER, BLUE_DARK, BLUE_LIGHT, FONT_MONO, GREEN, LINE, MUTED, ORANGE, RED, TEXT } from "@/theme";
 
 const EXAMPLES = [
@@ -134,6 +136,7 @@ export default function LiveTrainTracker() {
   const [error, setError] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
   const [lastUpdated, setLastUpdated] = useState("");
+  const [demo, setDemo] = useState(false);
 
   async function track(rawNumber: string, force = false) {
     const number = rawNumber.trim();
@@ -144,9 +147,21 @@ export default function LiveTrainTracker() {
     setLoading(true);
     setError(null);
     setShowAll(false);
+
+    if (!HAS_API_KEY) {
+      setData(buildDemoLiveTrain(number));
+      setDemo(true);
+      setLastUpdated(
+        new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false })
+      );
+      setLoading(false);
+      return;
+    }
+
     try {
       const result = await getLiveTrain(number, undefined, force);
       setData(result);
+      setDemo(false);
       setLastUpdated(
         new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false })
       );
@@ -189,7 +204,9 @@ export default function LiveTrainTracker() {
             <h3 style={{ fontSize: 16, fontWeight: 600, margin: 0 }}>Live train running status</h3>
           </div>
           <p style={{ fontSize: 12, color: MUTED, margin: "4px 0 0" }}>
-            Real position, delay, platform and upcoming halts from RailRadar.
+            {HAS_API_KEY
+              ? "Real position, delay, platform and upcoming halts from RailRadar."
+              : "Demo running status — bundled sample data, no API key required."}
           </p>
         </div>
       </div>
@@ -234,7 +251,7 @@ export default function LiveTrainTracker() {
           style={{ padding: "9px 12px", fontSize: 12 }}
           onClick={() => void track(trainNumber, true)}
           disabled={loading}
-          title="Force refresh (uses one API request)"
+          title={HAS_API_KEY ? "Force refresh (uses one API request)" : "Regenerate demo data"}
         >
           <RefreshCw size={13} />
           Refresh
@@ -258,6 +275,24 @@ export default function LiveTrainTracker() {
           </button>
         ))}
       </div>
+
+      {demo && !loading && (
+        <div
+          style={{
+            marginTop: 12,
+            padding: "8px 11px",
+            borderRadius: 6,
+            border: "1px solid #F3D9A5",
+            background: "#FDF4E3",
+            color: "#7A4E00",
+            fontSize: 11,
+            lineHeight: 1.45,
+          }}
+        >
+          <strong>Demo sample</strong> — this copy has no RailRadar API key. Position and timings are
+          bundled examples. Try 18237, 12441, 12919 or 12854.
+        </div>
+      )}
 
       {loading && !data && (
         <div className="grid gap-2" style={{ marginTop: 16 }}>
@@ -305,13 +340,13 @@ export default function LiveTrainTracker() {
                   style={{
                     fontSize: 10,
                     fontWeight: 600,
-                    color: data.isLive ? GREEN : BLUE_DARK,
-                    background: data.isLive ? "#EAF5EE" : BLUE_LIGHT,
+                    color: demo ? "#8A5A00" : data.isLive ? GREEN : BLUE_DARK,
+                    background: demo ? "#FDF4E3" : data.isLive ? "#EAF5EE" : BLUE_LIGHT,
                     borderRadius: 3,
                     padding: "2px 6px",
                   }}
                 >
-                  {data.isLive ? "● LIVE" : "TIMETABLE"}
+                  {demo ? "DEMO SAMPLE" : data.isLive ? "● LIVE" : "TIMETABLE"}
                 </span>
               </div>
               <div style={{ fontSize: 11, color: MUTED, marginTop: 3 }}>
@@ -445,8 +480,9 @@ export default function LiveTrainTracker() {
           </div>
 
           <p style={{ fontSize: 10, color: "#9AAAB8", marginTop: 12, marginBottom: 0 }}>
-            Live positions come from RailRadar's crowdsourced GPS and are validated against the route.
-            Timings can change — always check the platform display before boarding.
+            {demo
+              ? "Bundled demo data for demonstration. Add VITE_RAILRADAR_API_KEY before building to enable real live tracking."
+              : "Live positions come from RailRadar's crowdsourced GPS and are validated against the route. Timings can change — always check the platform display before boarding."}
           </p>
         </div>
       )}

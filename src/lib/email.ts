@@ -150,3 +150,42 @@ export function mailtoTicketLink(ticket: TicketEmailPayload): string {
     subject
   )}&body=${encodeURIComponent(body)}`;
 }
+
+/**
+ * Downloads the ticket + invoice as a single HTML file. It opens in any
+ * browser and prints cleanly to PDF, so the booking documents are always
+ * available even when no email credentials are configured.
+ */
+export async function downloadTicketDocument(ticket: TicketEmailPayload): Promise<void> {
+  let response: Response;
+  try {
+    response = await fetch("/api/ticket-document", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ticket }),
+    });
+  } catch {
+    throw new EmailError(
+      "The local booking API is offline, so the ticket file could not be created.",
+      "BACKEND_OFFLINE"
+    );
+  }
+
+  if (!response.ok) {
+    throw new EmailError(
+      `The ticket file could not be created (HTTP ${response.status}).`,
+      `HTTP_${response.status}`,
+      response.status
+    );
+  }
+
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `RailBandhu-Ticket-${ticket.pnr}.html`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}

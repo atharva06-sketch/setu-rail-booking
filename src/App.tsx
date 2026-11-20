@@ -48,10 +48,11 @@ import {
   getCoachComposition,
   getQuotaRemaining,
   getTrainsBetween,
+  HAS_API_KEY,
   subscribeQuota,
   type CoachCompositionData,
-  type TrainBetween,
 } from "@/lib/railradar";
+import { DEMO_TRAIN_TEMPLATES, demoTrainBetween } from "@/lib/demo";
 import {
   availabilityForDate,
   fareBreakupRows,
@@ -63,6 +64,7 @@ import {
   type ParsedAvailability,
 } from "@/lib/irctc";
 import {
+  downloadTicketDocument,
   mailtoTicketLink,
   sendTicketEmail,
   type TicketEmailPayload,
@@ -139,53 +141,6 @@ const SEAT_LAYOUTS: Record<ClassCode, { perRow: number; gapsAfter: number[]; gap
   "2S": { perRow: 6, gapsAfter: [3], gapWidth: 22 },
 };
 
-const DEMO_TEMPLATES = [
-  {
-    number: "18237",
-    name: "Chhattisgarh Express",
-    type: "Superfast Express",
-    dep: "14:30",
-    arr: "11:20",
-    dayOffset: 1,
-    duration: 1250,
-    distance: 1245,
-    halts: 38,
-  },
-  {
-    number: "12441",
-    name: "Bilaspur - New Delhi Rajdhani Express",
-    type: "Rajdhani Express",
-    dep: "15:35",
-    arr: "10:40",
-    dayOffset: 1,
-    duration: 1145,
-    distance: 1393,
-    halts: 8,
-  },
-  {
-    number: "18239",
-    name: "Shivnath Express",
-    type: "Mail/Express",
-    dep: "18:10",
-    arr: "22:05",
-    dayOffset: 0,
-    duration: 235,
-    distance: 305,
-    halts: 14,
-  },
-  {
-    number: "20825",
-    name: "Vande Bharat Express",
-    type: "Vande Bharat",
-    dep: "06:15",
-    arr: "12:40",
-    dayOffset: 0,
-    duration: 385,
-    distance: 560,
-    halts: 6,
-  },
-];
-
 /* ------------------------------------------------------------------ */
 
 function pad(value: number) {
@@ -246,6 +201,72 @@ interface EmailState {
   status: EmailStatus;
   message: string;
   previewUrl?: string;
+}
+
+interface SearchFormState {
+  from: string;
+  to: string;
+  date: string;
+  cls: ClassCode;
+  quota: string;
+  count: number;
+}
+
+const DEFAULT_FORM: SearchFormState = {
+  from: "R",
+  to: "NDLS",
+  date: dateString(1),
+  cls: "SL",
+  quota: "general",
+  count: 1,
+};
+
+const BOOKING_STORAGE_KEY = "railbandhu:booking:v1";
+
+interface BookingSnapshot {
+  version: 1;
+  savedAt: string;
+  step: Step;
+  form: SearchFormState;
+  search: SearchState | null;
+  trains: TrainResult[];
+  usingDemo: boolean;
+  selectedTrain: TrainResult | null;
+  selectedClass: ClassCode | null;
+  coach: string;
+  seatMaps: Record<string, SeatMap>;
+  selectedSeats: SelectedSeat[];
+  passengers: Passenger[];
+  contact: { email: string; phone: string };
+  pnr: string;
+  receipt: PaymentReceipt | null;
+  composition: CoachCompositionData | null;
+  liveAvailability: ParsedAvailability | null;
+  availabilityNote: string;
+  emailState: EmailState;
+  realFareTrains: number;
+}
+
+function loadBookingSnapshot(): BookingSnapshot | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(BOOKING_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as BookingSnapshot;
+    if (!parsed || parsed.version !== 1) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function saveBookingSnapshot(snapshot: BookingSnapshot) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(BOOKING_STORAGE_KEY, JSON.stringify(snapshot));
+  } catch {
+    /* localStorage full or blocked — the app still works for this visit */
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -387,14 +408,7 @@ function DataNote({ children }: { children: ReactNode }) {
 
 export default function TrainBooking() {
   const [step, setStep] = useState<Step>("search");
-  const [form, setForm] = useState({
-    from: "R",
-    to: "NDLS",
-    date: dateString(1),
-    cls: "SL" as ClassCode,
-    quota: "general",
-    count: 1,
-  });
+  const [form, setForm] = useState<SearchFormState>(DEFAULT_FORM);
 
   const [search, setSearch] = useState<SearchState | null>(null);
   const [trains, setTrains] = useState<TrainResult[]>([]);
@@ -429,7 +443,140 @@ export default function TrainBooking() {
   const [availabilityNote, setAvailabilityNote] = useState("");
   const [emailState, setEmailState] = useState<EmailState>({ status: "idle", message: "" });
   const [resending, setResending] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState("");
+  const [hydrated, setHydrated] = useState(false);
   const enrichedFares = useRef<Set<string>>(new Set());
+
+  /* Restore an in-progress booking after a page refresh. */
+  useEffect(() => {
+    const snapshot = loadBookingSnapshot();
+    if (!snapshot) {
+      setHydrated(true);
+      return;
+    }
+
+    const hasBooking = Boolean(
+      snapshot.selectedTrain && snapshot.selectedClass && snapshot.search
+    );
+    let restoredStep = snapshot.step;
+
+    if (!["search", "results", "seats", "passengers", "payment", "confirm"].includes(restoredStep)) {
+      restoredStep = "search";
+    }
+    if (restoredStep === "results" && (!snapshot.search || !snapshot.trains?.length)) {
+      restoredStep = "search";
+    }
+    if (["seats", "passengers", "payment"].includes(restoredStep) && !hasBooking) {
+      restoredStep = "search";
+    }
+    if (
+      restoredStep === "seats" &&
+      Object.keys(snapshot.seatMaps ?? {}).length === 0
+    ) {
+      restoredStep = "results";
+    }
+    if (restoredStep === "passengers" && (!snapshot.passengers?.length || !snapshot.selectedSeats?.length)) {
+      restoredStep = "seats";
+    }
+    if (restoredStep === "payment" && (!snapshot.passengers?.length || !snapshot.selectedSeats?.length)) {
+      restoredStep = "seats";
+    }
+    if (
+      restoredStep === "confirm" &&
+      (!hasBooking || !snapshot.pnr || !snapshot.receipt)
+    ) {
+      restoredStep = hasBooking ? "payment" : "search";
+    }
+
+    let restoredEmail: EmailState = snapshot.emailState?.status
+      ? snapshot.emailState
+      : { status: "idle", message: "" };
+    if (restoredEmail.status === "sending") {
+      restoredEmail = {
+        status: "failed",
+        message: "The page was refreshed while sending. Use Retry email.",
+      };
+    } else if (
+      restoredStep === "confirm" &&
+      !["sent", "preview", "failed"].includes(restoredEmail.status)
+    ) {
+      restoredEmail = {
+        status: "failed",
+        message: "Your booking was restored. Resend the e-ticket if needed.",
+      };
+    }
+
+    setForm(snapshot.form ?? DEFAULT_FORM);
+    setSearch(snapshot.search ?? null);
+    setTrains(snapshot.trains ?? []);
+    setUsingDemo(Boolean(snapshot.usingDemo));
+    setSelectedTrain(snapshot.selectedTrain ?? null);
+    setSelectedClass(snapshot.selectedClass ?? null);
+    setCoach(snapshot.coach ?? "");
+    setSeatMaps(snapshot.seatMaps ?? {});
+    setSelectedSeats(snapshot.selectedSeats ?? []);
+    setPassengers(snapshot.passengers ?? []);
+    setContact(snapshot.contact ?? { email: "", phone: "" });
+    setPnr(snapshot.pnr ?? "");
+    setReceipt(snapshot.receipt ?? null);
+    setComposition(snapshot.composition ?? null);
+    setLiveAvailability(snapshot.liveAvailability ?? null);
+    setAvailabilityNote(snapshot.availabilityNote ?? "");
+    setEmailState(restoredEmail);
+    setRealFareTrains(snapshot.realFareTrains ?? 0);
+    setStep(restoredStep);
+    setHydrated(true);
+  }, []);
+
+  /* Save progress on every meaningful change. */
+  useEffect(() => {
+    if (!hydrated) return;
+    saveBookingSnapshot({
+      version: 1,
+      savedAt: new Date().toISOString(),
+      step,
+      form,
+      search,
+      trains,
+      usingDemo,
+      selectedTrain,
+      selectedClass,
+      coach,
+      seatMaps,
+      selectedSeats,
+      passengers,
+      contact,
+      pnr,
+      receipt,
+      composition,
+      liveAvailability,
+      availabilityNote,
+      emailState,
+      realFareTrains,
+    });
+  }, [
+    hydrated,
+    step,
+    form,
+    search,
+    trains,
+    usingDemo,
+    selectedTrain,
+    selectedClass,
+    coach,
+    seatMaps,
+    selectedSeats,
+    passengers,
+    contact,
+    pnr,
+    receipt,
+    composition,
+    liveAvailability,
+    availabilityNote,
+    emailState,
+    realFareTrains,
+  ]);
 
   useEffect(() => subscribeQuota(setQuota), []);
   useEffect(() => {
@@ -479,6 +626,15 @@ export default function TrainBooking() {
     setTrains([]);
     setTypeFilter("all");
 
+    /* No RailRadar key: run the complete flow on bundled demo trains.
+       This is the default on a fresh clone, so no .env setup is needed. */
+    if (!HAS_API_KEY) {
+      setTrains(buildDemoTrainList(next.from, next.to, next.date, next.quota));
+      setUsingDemo(true);
+      setResultsLoading(false);
+      return;
+    }
+
     try {
       const data = await getTrainsBetween(next.from, next.to, next.date);
       setTrains(data.trains.map((train) => buildTrainResult(train, next.date, next.quota)));
@@ -489,44 +645,21 @@ export default function TrainBooking() {
     }
   }
 
+  function buildDemoTrainList(fromCode: string, toCode: string, date: string, quota: string) {
+    const fromName = getStation(fromCode)?.name ?? fromCode;
+    const toName = getStation(toCode)?.name ?? toCode;
+    return DEMO_TRAIN_TEMPLATES.map((template) =>
+      buildTrainResult(demoTrainBetween(template, fromCode, fromName, toCode, toName), date, quota)
+    );
+  }
+
   function loadDemoTrains() {
     const fromCode = search?.from ?? form.from;
     const toCode = search?.to ?? form.to;
-    const fromName = getStation(fromCode)?.name ?? fromCode;
-    const toName = getStation(toCode)?.name ?? toCode;
     const date = search?.date ?? form.date;
     const quota = search?.quota ?? form.quota;
 
-    const demo = DEMO_TEMPLATES.map((template) => {
-      const between: TrainBetween = {
-        train: {
-          number: template.number,
-          name: template.name,
-          type: template.type,
-          runDays: ["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
-        },
-        from: {
-          code: fromCode,
-          name: fromName,
-          departure: template.dep,
-          day: 1,
-          sequence: 1,
-        },
-        to: {
-          code: toCode,
-          name: toName,
-          arrival: template.arr,
-          day: 1 + template.dayOffset,
-          sequence: 2,
-        },
-        distance: template.distance,
-        duration: template.duration,
-        totalHaltsBetween: template.halts,
-      };
-      return buildTrainResult(between, date, quota);
-    });
-
-    setTrains(demo);
+    setTrains(buildDemoTrainList(fromCode, toCode, date, quota));
     setResultsError(null);
     setUsingDemo(true);
   }
@@ -688,7 +821,9 @@ export default function TrainBooking() {
       );
     } else {
       setAvailabilityNote(
-        "Live IRCTC availability is not configured; showing a simulated count."
+        HAS_API_KEY
+          ? "Live IRCTC availability is not configured; showing a simulated count."
+          : "Demo mode: simulated seat availability."
       );
     }
 
@@ -952,6 +1087,23 @@ export default function TrainBooking() {
     }
   }
 
+  async function downloadTicket() {
+    if (!ticketEmailPayload) return;
+    setDownloading(true);
+    setDownloadError("");
+    try {
+      await downloadTicketDocument(ticketEmailPayload);
+    } catch (error) {
+      setDownloadError(
+        error instanceof Error
+          ? error.message
+          : "The ticket file could not be downloaded."
+      );
+    } finally {
+      setDownloading(false);
+    }
+  }
+
   function handlePaymentSuccess(nextReceipt: PaymentReceipt) {
     const nextPnr = makePnr();
     setReceipt(nextReceipt);
@@ -961,6 +1113,11 @@ export default function TrainBooking() {
   }
 
   function resetAll() {
+    try {
+      window.localStorage.removeItem(BOOKING_STORAGE_KEY);
+    } catch {
+      /* ignore storage errors */
+    }
     setStep("search");
     setSearch(null);
     setTrains([]);
@@ -1045,8 +1202,8 @@ export default function TrainBooking() {
             </div>
           </div>
           <div className="flex items-center gap-2" style={{ fontSize: 11, color: "#BFD3E6" }}>
-            <span className="live-dot" style={{ background: "#7BD88F" }} />
-            Live data by RailRadar
+            <span className="live-dot" style={{ background: HAS_API_KEY ? "#7BD88F" : "#F5A623" }} />
+            {HAS_API_KEY ? "Live data by RailRadar" : "Demo mode · no API key needed"}
           </div>
         </div>
         <div style={{ height: 4, background: ORANGE }} />
@@ -1073,15 +1230,15 @@ export default function TrainBooking() {
                   Book your train ticket
                 </h1>
                 <p style={{ color: "#CFE0EE", fontSize: 14, margin: 0 }}>
-                  All 8,670 Indian Railways stations, real trains and live running status.
+                  {HAS_API_KEY
+                    ? "All 8,670 Indian Railways stations, real trains and live running status."
+                    : "All 8,670 stations, bundled demo trains and a complete sandbox booking flow."}
                 </p>
                 <div className="flex flex-wrap gap-2" style={{ marginTop: 14 }}>
-                  {[
-                    "8,670 stations",
-                    "Real timetables",
-                    "Live GPS status",
-                    "Sandbox payments",
-                  ].map((item) => (
+                  {(HAS_API_KEY
+                    ? ["8,670 stations", "Real timetables", "Live GPS status", "Sandbox payments"]
+                    : ["8,670 stations", "Demo trains", "Sample live status", "Sandbox payments"]
+                  ).map((item) => (
                     <span
                       key={item}
                       style={{
@@ -1102,6 +1259,24 @@ export default function TrainBooking() {
 
             <div style={{ maxWidth: 960, margin: "-60px auto 0", padding: "0 20px" }}>
               <form onSubmit={(event) => { event.preventDefault(); void runSearch(); }} className="card" style={{ padding: 20 }}>
+                {!HAS_API_KEY && (
+                  <div
+                    style={{
+                      marginBottom: 14,
+                      padding: "9px 12px",
+                      borderRadius: 6,
+                      border: "1px solid #F3D9A5",
+                      background: "#FDF4E3",
+                      color: "#7A4E00",
+                      fontSize: 12,
+                      lineHeight: 1.45,
+                    }}
+                  >
+                    <strong>Demo mode</strong> — this copy needs no API key. Train search, the station
+                    board and running status use realistic bundled sample data. Every booking, seat,
+                    payment and email step works normally.
+                  </div>
+                )}
                 <div className="flex flex-wrap gap-2 mb-2">
                   {QUOTAS.map((quotaOption) => (
                     <button
@@ -1224,9 +1399,9 @@ export default function TrainBooking() {
 
                 <div style={{ marginTop: 12 }}>
                   <DataNote>
-                    Trains, timings, live running status and coach layouts are real (RailRadar).
-                    Fares and seat availability come live from IRCTC when an API key is configured,
-                    otherwise realistic simulations are used. Payment is a sandbox gateway.
+                    {HAS_API_KEY
+                      ? "Trains, timings, live running status and coach layouts are real (RailRadar). Fares and seat availability come live from IRCTC when an API key is configured, otherwise realistic simulations are used. Payment is a sandbox gateway."
+                      : "Demo mode: the station list is real and bundled. Train times, live status and coach layouts are bundled samples; fares and seats are simulated. Payment is a sandbox gateway."}
                   </DataNote>
                 </div>
 
@@ -1301,8 +1476,9 @@ export default function TrainBooking() {
 
               <div style={{ marginTop: 28, marginBottom: 10 }}>
                 <DataNote>
-                  Live data is provided by RailRadar's crowdsourced tracking network. Seat maps,
-                  availability, fares and the payment gateway are demo simulations.
+                  {HAS_API_KEY
+                    ? "Live data is provided by RailRadar's crowdsourced tracking network. Seat maps, availability, fares and the payment gateway are demo simulations."
+                    : "Demo mode: the station board and running status above are bundled samples, not live feeds. Seat maps, fares and the payment gateway are simulations."}
                 </DataNote>
               </div>
             </div>
@@ -1361,12 +1537,20 @@ export default function TrainBooking() {
                       ? "FETCHING IRCTC FARES…"
                       : backend?.irctc
                         ? "IRCTC FARES UNAVAILABLE · SIMULATED"
-                        : "FARES SIMULATED · ADD IRCTC_API_KEY"}
+                        : HAS_API_KEY
+                          ? "FARES SIMULATED · ADD IRCTC_API_KEY"
+                          : "FARES SIMULATED · DEMO MODE"}
                 </span>
                 <span style={{ fontSize: 10, color: "#8A99A8" }}>
                   Live seat availability is fetched when you choose a class
                 </span>
               </div>
+              {usingDemo && (
+                <p style={{ fontSize: 11, color: "#8A5A00", margin: "-6px 0 12px" }}>
+                  Bundled demo trains — no API key required. Pick any train to continue the full
+                  booking flow.
+                </p>
+              )}
 
               {!resultsLoading && !resultsError && trains.length > 0 && (
                 <div className="flex flex-wrap items-center gap-2" style={{ marginBottom: 14 }}>
@@ -1577,10 +1761,9 @@ export default function TrainBooking() {
 
               <div style={{ marginTop: 16 }}>
                 <DataNote>
-                  Train numbers, timings, run days and distances are real (RailRadar). Fares marked
-                  “IRCTC” are live IRCTC fares; the rest are realistic estimates. Live seat
-                  availability is fetched when you open a class, and coach/berth layouts come from
-                  RailRadar's real rake composition.
+                  {usingDemo
+                    ? "Demo mode: train numbers, timings and distances are bundled samples. Fares and seat availability are simulated; coach layouts are generated locally. The full booking, payment and email flow still works."
+                    : "Train numbers, timings, run days and distances are real (RailRadar). Fares marked “IRCTC” are live IRCTC fares; the rest are realistic estimates. Live seat availability is fetched when you open a class, and coach/berth layouts come from RailRadar's real rake composition."}
                 </DataNote>
               </div>
             </div>
@@ -2019,8 +2202,8 @@ export default function TrainBooking() {
                   </div>
                   <div style={{ fontSize: 11, color: "#8A99A8", marginTop: 10 }}>
                     The e-ticket, booking invoice and payment OTP are sent here. With SMTP or
-                    EmailJS configured this is a real inbox; otherwise the backend captures the
-                    email in an Ethereal test inbox and shows a preview link.
+                    EmailJS configured this is a real inbox. Otherwise the email is captured in a
+                    test inbox, and you can download or print the ticket after booking.
                   </div>
                 </div>
 
@@ -2127,6 +2310,61 @@ export default function TrainBooking() {
                     <div style={{ fontSize: 12, color: MUTED, marginTop: 2 }}>
                       {emailState.message || "Preparing your e-ticket…"}
                     </div>
+                    {backend?.emailMode === "ethereal" && (
+                      <div
+                        style={{
+                          marginTop: 8,
+                          padding: "8px 10px",
+                          borderRadius: 5,
+                          background: "#FDF4E3",
+                          border: "1px solid #F3D9A5",
+                          color: "#7A4E00",
+                          fontSize: 11,
+                          lineHeight: 1.5,
+                        }}
+                      >
+                        <strong>Test inbox.</strong> Ethereal captures the email but does not
+                        deliver it to {contact.email}. Use{" "}
+                        <strong>Download ticket + invoice</strong> for the actual document, or add
+                        SMTP details to <code>.env</code> to send to a real inbox.
+                        <details style={{ marginTop: 6 }}>
+                          <summary style={{ cursor: "pointer", fontWeight: 600 }}>
+                            How to send to a real inbox
+                          </summary>
+                          <ol style={{ margin: "6px 0 0 16px", padding: 0, lineHeight: 1.6 }}>
+                            <li>
+                              Create a Gmail App Password at{" "}
+                              <a
+                                href="https://myaccount.google.com/apppasswords"
+                                target="_blank"
+                                rel="noreferrer"
+                                style={{ color: "#7A4E00", textDecoration: "underline" }}
+                              >
+                                myaccount.google.com/apppasswords
+                              </a>
+                              .
+                            </li>
+                            <li>
+                              Copy <code>.env.example</code> to <code>.env</code> and set{" "}
+                              <code>SMTP_HOST=smtp.gmail.com</code>,{" "}
+                              <code>SMTP_PORT=587</code>, <code>SMTP_USER=you@gmail.com</code>,{" "}
+                              <code>SMTP_PASS=the 16-character app password</code>.
+                            </li>
+                            <li>
+                              Restart with <code>npm start</code>. The same ticket email is then
+                              delivered to the passenger's real inbox.
+                            </li>
+                          </ol>
+                          <div style={{ marginTop: 4 }}>
+                            Not needed for the demo: the test inbox, download and print buttons
+                            already work on any computer.
+                          </div>
+                        </details>
+                      </div>
+                    )}
+                    {downloadError && (
+                      <div style={{ marginTop: 6, fontSize: 11, color: RED }}>{downloadError}</div>
+                    )}
                     <div className="flex flex-wrap gap-2" style={{ marginTop: 8 }}>
                       {emailState.previewUrl && (
                         <a
@@ -2148,6 +2386,18 @@ export default function TrainBooking() {
                           style={{ padding: "6px 10px", fontSize: 12 }}
                         >
                           <RefreshCw size={13} /> {resending ? "Retrying…" : "Retry email"}
+                        </button>
+                      )}
+                      {ticketEmailPayload && (
+                        <button
+                          type="button"
+                          onClick={() => void downloadTicket()}
+                          disabled={downloading}
+                          className="btn-ghost flex items-center gap-1"
+                          style={{ padding: "6px 10px", fontSize: 12 }}
+                        >
+                          <Ticket size={13} />{" "}
+                          {downloading ? "Preparing…" : "Download ticket + invoice"}
                         </button>
                       )}
                       {ticketEmailPayload && (
@@ -2356,6 +2606,14 @@ export default function TrainBooking() {
 
               <div className="flex flex-wrap gap-2 no-print" style={{ marginTop: 18 }}>
                 <button
+                  onClick={() => void downloadTicket()}
+                  disabled={downloading}
+                  className="btn-ghost flex items-center gap-2"
+                  style={{ padding: "10px 16px", fontSize: 14 }}
+                >
+                  <Ticket size={15} /> {downloading ? "Preparing…" : "Download ticket + invoice"}
+                </button>
+                <button
                   onClick={() => window.print()}
                   className="btn-primary flex items-center gap-2"
                   style={{ padding: "10px 16px", fontSize: 14 }}
@@ -2386,7 +2644,9 @@ export default function TrainBooking() {
             <span style={{ fontSize: 10, color: "#9AAAB8" }}>· College project demo</span>
           </div>
           <div className="flex flex-wrap items-center gap-3" style={{ fontSize: 10, color: MUTED }}>
-            <span>Train data &amp; live status: RailRadar</span>
+            <span>
+              {HAS_API_KEY ? "Train data & live status: RailRadar" : "Demo mode: bundled sample data"}
+            </span>
             <span>{backend?.irctc ? "IRCTC fares/seats: live" : "Fares/seats: simulated"}</span>
             <span>
               Email:{" "}

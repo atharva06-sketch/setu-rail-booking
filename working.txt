@@ -1,0 +1,1110 @@
+================================================================================
+ RAIL BANDHU - COMPLETE WORKING GUIDE
+ Indian Railways Ticket Booking Demo (College Project)
+================================================================================
+
+ Version      : 1.1.0
+ Frontend     : React 18 + TypeScript + Vite 5
+ Backend      : Node.js 18+ + Express 5
+ Data sources : bundled demo data by default; RailRadar and IRCTC optional
+ Last updated : 20 November 2026
+
+ DISCLAIMER
+ ----------
+ This is a college project and a demonstration application. It is not
+ affiliated with Indian Railways or IRCTC. The PNR, ticket, QR code and
+ payment are simulated. The ticket is NOT valid for travel.
+
+
+================================================================================
+ CONTENTS
+================================================================================
+
+  1.  What the app does
+  2.  Quick start - no keys, no .env
+  3.  Technology stack
+  4.  Folder structure
+  5.  Overall architecture
+  6.  The booking flow, step by step
+  7.  Refresh persistence
+  8.  How data is handled
+  9.  How APIs are handled
+ 10.  Backend API reference
+ 11.  Caching and API quota
+ 12.  Email delivery
+ 13.  Ticket document download and print
+ 14.  Payment gateway (sandbox)
+ 15.  Configuration (.env) - all optional
+ 16.  Running the app
+ 17.  Sharing a public demo link
+ 18.  Friend's guide: clone, install and run
+ 19.  Demo and test data
+ 20.  Troubleshooting
+ 21.  What is real vs simulated
+ 22.  Security notes and limitations
+ 23.  Verification checklist
+
+
+================================================================================
+ 1. WHAT THE APP DOES
+================================================================================
+
+ Rail Bandhu is a complete train-ticket booking flow for Indian Railways. A user
+ can search trains between any two of 8,670 stations, pick a class and quota,
+ choose berths from a coach map, enter passenger details, pay through a sandbox
+ gateway, and receive a PNR e-ticket with an invoice by email.
+
+ The same app runs in two modes:
+
+   DEMO MODE (default, no key)
+     Everything works using realistic bundled sample data. Train search, the
+     station board and running status are labelled DEMO DATA / DEMO BOARD /
+     DEMO SAMPLE. Booking, seats, payment, persistence, email capture and
+     document download all work normally.
+
+   LIVE MODE (optional)
+     Add a RailRadar key before building to use real trains, live running
+     status, station boards and coach composition. Add an IRCTC key to the
+     backend for real fares and seat availability. Add SMTP or EmailJS
+     credentials for real email delivery.
+
+ Main features:
+
+   - All-India station search: 8,670 active stations are bundled inside the
+     app, so station search works offline and costs zero API requests.
+   - Train search: four bundled demo trains by default. With a RailRadar key,
+     real train numbers, names, times, run days, distance and halt counts.
+   - Live running status: bundled demo route by default. With a key, real
+     current location, delay, next halt, platform, speed and route timeline.
+   - Live station board: bundled demo arrivals/departures by default. With a
+     key, real boards for the next 2/4/6/8 hours.
+   - Coach composition: generated locally by default. With a key, real coach
+     numbers, berth counts and berth blueprints.
+   - Fares and seat availability: simulated and clearly labelled by default.
+     With an IRCTC key, live fare breakups and PRS availability.
+   - Eight quotas: General, Tatkal, Premium Tatkal, Ladies, Senior Citizens,
+     Defence, Divyangjan and Lower Berth, with Ladies/Senior validation.
+   - Seat selection: coach-wise maps with berth types. Unavailable berths are
+     greyed out.
+   - Sandbox payment gateway: UPI, card, net banking and wallet, with input
+     validation, OTP, processing animation, transaction ID and auth code.
+   - E-ticket and invoice email: sent automatically after payment. With no
+     email credentials it is captured by a free Ethereal test inbox and shown
+     as a preview link. With SMTP or EmailJS it reaches a real inbox.
+   - Ticket document: the confirmation screen can download the ticket and
+     invoice as a standalone HTML file, or print/save the on-screen ticket as
+     PDF. This works even when email is not configured.
+   - Refresh persistence: booking progress is saved in localStorage and
+     restored after a browser refresh.
+   - Graceful fallbacks: missing keys never crash the app. It labels sample
+     data and still demonstrates the full flow.
+   - Reliability: an error boundary, a boot-failure screen with automatic retry,
+     and a clear "API offline" message instead of a blank page.
+
+ The home screen has two areas:
+
+   A. Booking flow  - search, results, seats, passengers, payment, ticket.
+   B. Live rail radar - a station board for Raipur Jn (R) and a train tracker
+      where you can enter a 5-digit train number (examples: 18237, 12919,
+      12441, 12854).
+
+
+================================================================================
+ 2. QUICK START - NO KEYS, NO .ENV
+================================================================================
+
+ Requirements:
+   - Node.js 18 or newer (Node 20+ recommended)
+   - npm (installed with Node.js)
+
+ Commands:
+
+   cd setu-rail-booking
+   npm install
+   npm start
+
+ Then open:
+
+   http://127.0.0.1:8787
+
+ That is the entire setup. There is no API key, no .env file and no separate
+ build command. npm start runs the "prestart" script, which builds the frontend
+ into dist/, and then starts the Express server, which serves both the website
+ and the /api endpoints.
+
+ On a fresh clone with no .env, the app detects that no RailRadar key was
+ compiled in and automatically uses the bundled demo data. The search form is
+ pre-filled with Raipur Jn (R) -> New Delhi (NDLS) for tomorrow. Press
+ "Search trains" and continue through the full booking flow.
+
+ To stop the server, press Ctrl + C in the terminal.
+
+
+================================================================================
+ 3. TECHNOLOGY STACK
+================================================================================
+
+ Frontend
+ --------
+   React 18.3              UI and state
+   TypeScript 5.5          Type safety
+   Vite 5.4                Dev server and production bundler
+   Tailwind CSS 3.4        Utility classes, combined with inline theme tokens
+   lucide-react            Icons
+   localStorage            Booking snapshot, response cache, quota display
+
+ Backend
+ -------
+   Node.js 18 or newer     Runtime (declared in package.json "engines")
+   Express 5               HTTP server, IRCTC proxy, email API, static hosting
+   dotenv                  Loads .env into process.env (optional)
+   nodemailer              SMTP and Ethereal email delivery
+   cors                    Allows the API to be called cross-origin
+
+ External services (all optional)
+ --------------------------------
+   RailRadar API           https://api.railradar.in/v1
+                           Real trains, live status, station boards, coaches.
+                           Free key: https://railradar.in/developers
+
+   IRCTC API (irctc.dev)   https://api.irctc.dev
+                           Real fares and seat availability.
+                           Free key: https://irctc.dev/dashboard
+
+   SMTP server (optional)  Any provider; Gmail requires an App Password.
+   EmailJS (optional)      Alternative email delivery without SMTP.
+   Ethereal (automatic)    Nodemailer's free test inbox, used when no email
+                           credentials are configured.
+
+ Note: @supabase/supabase-js is listed in package.json but the running
+ application does not use a database. All booking state lives in the browser.
+
+
+================================================================================
+ 4. FOLDER STRUCTURE
+================================================================================
+
+ setu-rail-booking/
+ |
+ +-- index.html                 Vite HTML entry point
+ +-- package.json               Scripts and dependencies
+ +-- package-lock.json          Exact dependency versions
+ +-- vite.config.ts             Dev server, /api proxy, path alias, ports
+ +-- tsconfig*.json             TypeScript configuration
+ +-- tailwind.config.js         Tailwind content paths
+ +-- .env.example               Template for all optional environment variables
+ +-- README.md                  Short setup and sharing guide
+ +-- working.txt                This complete guide
+ |
+ +-- server/
+ |    +-- index.mjs             Express server: IRCTC proxy, email API,
+ |    |                         ticket download, static hosting
+ |    +-- ticketEmail.mjs       Ticket + invoice HTML/text email template
+ |
+ +-- src/
+ |    +-- main.tsx              React entry point
+ |    +-- App.tsx               Booking flow, screens, persistence, email card
+ |    +-- theme.tsx             Design tokens and global CSS
+ |    +-- components/
+ |    |    +-- StationPicker.tsx      Searchable all-India station combobox
+ |    |    +-- StationBoard.tsx       Demo/live arrivals-departures board
+ |    |    +-- LiveTrainTracker.tsx   Demo/live running status + route timeline
+ |    |    +-- PaymentGateway.tsx     Sandbox UPI/card/netbanking/wallet
+ |    +-- data/
+ |    |    +-- stations.ts            Generated list of 8,670 active stations
+ |    +-- lib/
+ |         +-- demo.ts                Bundled demo trains, board and live status
+ |         +-- railradar.ts           RailRadar client, coach data, caching, quota
+ |         +-- irctc.ts               IRCTC fare/availability client + parsers
+ |         +-- stations.ts            Local station search/index
+ |         +-- booking.ts             Classes, quotas, fares, seat maps, receipts
+ |         +-- email.ts               Email client, ticket text, mailto/download
+ |
+ +-- scripts/
+      +-- fetch-stations.mjs       Regenerates the station dataset
+
+
+================================================================================
+ 5. OVERALL ARCHITECTURE
+================================================================================
+
+ Browser
+ -------
+   React single-page app. All screen state lives in React inside App.tsx.
+   A snapshot of the booking is written to localStorage after every meaningful
+   change. The app never talks to RailRadar or IRCTC directly.
+
+ Local backend (Express)
+ -----------------------
+   Serves the built frontend from dist/.
+   Proxies optional IRCTC requests so the IRCTC API key stays server-side.
+   Renders and sends the ticket email.
+   Renders the downloadable ticket document.
+
+ External services
+ -----------------
+   RailRadar is called directly from the browser in live mode. The key is a
+   VITE_* variable, so it is visible in the browser bundle by design.
+   IRCTC is called only by the backend.
+   SMTP / EmailJS / Ethereal is called only by the backend.
+
+ Ports:
+   Production / npm start : http://127.0.0.1:8787  (site + API)
+   Development frontend   : http://localhost:5173  (Vite)
+   Development backend    : http://127.0.0.1:8787  (Vite proxies /api)
+   PORT environment variable changes the backend port.
+
+ No database is required.
+
+
+================================================================================
+ 6. THE BOOKING FLOW, STEP BY STEP
+================================================================================
+
+ STEP 1 - SEARCH
+   File: src/App.tsx (search screen)
+   - From and To use the bundled 8,670-station list with code/name search.
+   - Date, class, quota and passenger count are selected here.
+   - Pressing Search trains calls runSearch().
+
+ STEP 2 - RESULTS
+   - If HAS_API_KEY is false, runSearch() immediately builds the four demo
+     trains with buildDemoTrainList() and sets usingDemo = true. No network
+     request is made.
+   - If a RailRadar key is present, getTrainsBetween() is called and each
+     result is converted with buildTrainResult().
+   - Filters (train type) and sorting are applied in the browser.
+   - Each class button shows a fare and an availability label. Choosing a
+     class starts the seat/availability load.
+
+ STEP 3 - SEATS
+   - loadSeats() optionally fetches IRCTC availability and RailRadar coach
+     composition, then generates a seat map with generateSeatMap().
+   - The user picks exactly as many seats as the passenger count.
+   - Seat buttons carry a title such as "Seat 12 - Lower"; booked seats are
+     greyed out and cannot be selected.
+   - Pressing Continue calls proceedFromSeats() and creates one passenger
+     record per selected seat.
+
+ STEP 4 - PASSENGERS
+   - Name, age and gender for each passenger.
+   - Contact email and mobile number for the ticket.
+   - Validation covers name, age, email format and 10-digit mobile.
+   - Pressing Continue to payment validates and moves to payment.
+
+ STEP 5 - PAYMENT
+   - Component: src/components/PaymentGateway.tsx.
+   - Methods: UPI, card, net banking, wallet.
+   - Sandbox rules:
+       UPI        any valid-looking ID such as name@bank
+       Card       4111 1111 1111 1111, any future expiry, CVV 123
+       Netbanking choose any bank
+       Wallet     choose any wallet
+       OTP        123456
+   - On success, buildReceipt() returns method, detail, transaction ID, auth
+     code and paid-at time. onSuccess() moves to the confirmation step.
+
+ STEP 6 - CONFIRMATION
+   - makePnr() generates a 10-digit simulated PNR.
+   - handlePaymentSuccess() stores the receipt and PNR, switches to confirm,
+     and calls sendTicketEmailNow() automatically.
+   - The screen renders the e-ticket, passenger/seat table, fare invoice,
+     payment details, simulated QR code, email card, download button,
+     print/save-PDF button and "Book another journey".
+
+
+================================================================================
+ 7. REFRESH PERSISTENCE
+================================================================================
+
+ Storage key:
+
+   railbandhu:booking:v1
+
+ What is stored (BookingSnapshot in src/App.tsx):
+
+   version, savedAt, step, form, search, trains, usingDemo,
+   selectedTrain, selectedClass, coach, seatMaps, selectedSeats,
+   passengers, contact, pnr, receipt, composition,
+   liveAvailability, availabilityNote, emailState, realFareTrains
+
+ How it works:
+
+   1. On first mount, loadBookingSnapshot() reads and parses localStorage.
+   2. Invalid or missing data is ignored; a "hydrated" flag is set.
+   3. Restored steps are validated and downgraded if their required data is
+      missing. Examples:
+        results without search/trains      -> search
+        seats without seat maps            -> results
+        passengers without seats/passengers-> seats
+        payment without passenger data     -> seats
+        confirm without PNR/receipt        -> payment or search
+   4. An email state of "sending" becomes "failed" with a retry message,
+      because the original request was interrupted by the refresh.
+   5. After hydration, every meaningful state change writes a fresh snapshot.
+      The hydrated flag prevents the initial render from overwriting the
+      restored data with defaults.
+   6. "Book another journey" removes the key and resets booking state.
+
+ Tested behaviour:
+
+   - Refresh on the passenger step restores the same step, selected seat,
+     passenger name/age and contact email/phone.
+   - Refresh on the confirmation step restores the PNR, ticket, passenger,
+     download button and email preview link.
+
+ Limitations:
+
+   - localStorage is per browser and per origin. A different browser or a
+     private window starts with an empty booking.
+   - Clearing site data removes the snapshot.
+   - Passenger data is stored locally in the browser, not on a server.
+
+
+================================================================================
+ 8. HOW DATA IS HANDLED
+================================================================================
+
+ 8.1 STATIONS (always real, always offline)
+ ------------------------------------------
+   File: src/data/stations.ts
+   A generated list of 8,670 active Indian Railways stations with code, name,
+   city and state. src/lib/stations.ts builds a search index and provides
+   getStation(), stationTitle() and searchStations(). No network is used.
+
+ 8.2 DEMO TRAIN SEARCH
+ ---------------------
+   File: src/lib/demo.ts
+   DEMO_TRAIN_TEMPLATES contains four trains:
+     18237  Chhattisgarh Express
+     12441  Bilaspur - New Delhi Rajdhani Express
+     18239  Shivnath Express
+     20825  Vande Bharat Express
+   demoTrainBetween() builds the same TrainBetween shape that RailRadar
+   returns, using the chosen from/to station and date. buildTrainResult()
+   then converts it into the app's TrainResult with fares, run days and
+   availability labels.
+   Result screen label: DEMO DATA.
+
+ 8.3 DEMO STATION BOARD
+ ----------------------
+   buildDemoStationBoard(stationCode, stationName, hours) filters a fixed list
+   of sample trains by the selected time window. Times are calculated in IST
+   from the current clock, so the board always looks current. It returns the
+   same StationLiveData shape as the real client.
+   Label: DEMO BOARD.
+
+ 8.4 DEMO RUNNING STATUS
+ -----------------------
+   buildDemoLiveTrain(trainNumber) returns a full LiveTrainData object:
+   current location, previous/next halt, delay, platform, speed and a route
+   timeline. Four real train numbers have detailed routes: 18237, 12441,
+   12919, 12854. Any other number gets a generic demo route based on 18237
+   with "Demo Express #<number>".
+   Label: DEMO SAMPLE.
+
+ 8.5 REAL TRAIN DATA (optional)
+ -------------------------------
+   File: src/lib/railradar.ts
+   HAS_API_KEY is computed once at build time from
+   import.meta.env.VITE_RAILRADAR_API_KEY.
+   When true, the app uses:
+     getTrainsBetween()    train search
+     getLiveTrain()        running status
+     getStationLive()      station board
+     getCoachComposition() coach numbers and berth blueprints
+   Responses are cached in localStorage and in memory; see section 11.
+
+ 8.6 REAL IRCTC DATA (optional)
+ -------------------------------
+   File: src/lib/irctc.ts, backend routes /api/fare and /api/availability.
+   getRealFares() and getRealAvailability() call the local backend, which
+   forwards the request with the server-side IRCTC_API_KEY. Parsers turn the
+   response into fare rows and availability status. If the call fails or no
+   key is configured, the app keeps its simulated values and shows a note.
+
+ 8.7 COACH AND SEAT DATA
+ -----------------------
+   With RailRadar composition available, real coach codes and berth counts are
+   used. Otherwise coach codes come from CLASS_META and a deterministic seat
+   map is generated with generateSeatMap(). The map is stable for the same
+   train/coach/class, so refreshing does not reshuffle the seats.
+
+ 8.8 BOOKING AND PAYMENT DATA
+ ----------------------------
+   File: src/lib/booking.ts
+   Fares, classes, quotas, seat layouts, PNR generation and payment receipts
+   are computed locally. No real money moves and no real reservation is made.
+
+
+================================================================================
+ 9. HOW APIS ARE HANDLED
+================================================================================
+
+ 9.1 RAILRADAR (browser, optional)
+ ---------------------------------
+   Base URL: VITE_RAILRADAR_API_BASE, default https://api.railradar.in/v1
+   Auth    : x-api-key header with VITE_RAILRADAR_API_KEY
+
+   The client:
+   - Checks the cache before every request.
+   - Uses an AbortController timeout.
+   - Converts failures into friendlyApiError() messages:
+       missing key, quota exhausted, rate limit, network failure, bad response.
+   - Tracks the remaining monthly quota and broadcasts it through
+     subscribeQuota(), which the footer displays.
+   - Never breaks the booking flow: if live data is unavailable, the app
+     shows an error or falls back to demo/simulated data.
+
+   Important: because VITE_* values are compiled into the browser bundle, the
+   RailRadar key is visible to anyone who downloads the bundle. Do not publish
+   a build containing a private key. The public demo build intentionally omits
+   the key.
+
+ 9.2 IRCTC (backend only, optional)
+ ----------------------------------
+   The browser calls /api/fare and /api/availability on the local backend.
+   The backend adds the x-api-key header from IRCTC_API_KEY and forwards to
+   IRCTC_API_BASE. The key never reaches the browser. Responses are cached
+   in memory:
+     fares         12 hours
+     availability  2 minutes
+
+ 9.3 EMAIL (backend only)
+ ------------------------
+   The browser calls /api/send-ticket. The backend chooses SMTP, EmailJS or
+   Ethereal and returns a JSON result. Credentials never reach the browser.
+   See section 12.
+
+ 9.4 ERROR HANDLING
+ ------------------
+   - Frontend fetch failures produce readable messages, not blank screens.
+   - The backend returns JSON { success: false, code, message } with an HTTP
+     status for bad input, missing configuration and upstream failures.
+   - Email failures leave the booking intact and show a Retry email button.
+   - The confirmation screen and downloads do not depend on the email result.
+
+
+================================================================================
+ 10. BACKEND API REFERENCE
+================================================================================
+
+ GET /api/health
+   Returns:
+     {
+       ok: true,
+       irctc: boolean,
+       email: boolean,
+       emailMode: "smtp" | "emailjs" | "ethereal" | "none",
+       railradar: true,
+       time: ISO string
+     }
+   Used by the UI to label the active modes.
+
+ GET /api/fare?train=18237&from=R&to=NDLS&quota=GN&class=SL
+   Requires IRCTC_API_KEY. Returns the IRCTC fare response plus
+   source: "irctc". Errors: 400 bad request, 503 not configured,
+   502 upstream failure.
+
+ GET /api/availability?train=18237&from=R&to=NDLS&date=2026-11-21&quota=GN&class=SL
+   Requires IRCTC_API_KEY. Returns the IRCTC availability response plus
+   source: "irctc". Cached for 2 minutes.
+
+ POST /api/send-ticket
+   Body:
+     {
+       "to": "passenger@example.com",
+       "ticket": { ...TicketEmailPayload }
+     }
+   Validates the email address and ticket basics.
+   Renders the email with renderTicketEmail() and sends it through the
+   configured mode. Returns:
+     {
+       success: true,
+       mode: "smtp" | "emailjs" | "ethereal",
+       message: string,
+       previewUrl: string | null,
+       messageId: string
+     }
+   The email includes the ticket and invoice and has the same HTML attached
+   as a file.
+
+ POST /api/ticket-document
+   Body: { "ticket": { ...TicketEmailPayload } }
+   Returns the same ticket + invoice HTML with:
+     Content-Type: text/html; charset=utf-8
+     Content-Disposition: attachment; filename="RailBandhu-Ticket-<PNR>.html"
+   Used by the Download ticket + invoice button.
+
+ Any other non-/api path is served from dist/, with index.html as the SPA
+ fallback.
+
+
+================================================================================
+ 11. CACHING AND API QUOTA
+================================================================================
+
+ RailRadar cache (browser):
+   train search        6 hours
+   live running status 45 seconds
+   station board       90 seconds
+   coach composition   12 hours
+
+ IRCTC cache (backend memory):
+   fares               12 hours
+   availability        2 minutes
+
+ The footer shows the remaining monthly RailRadar quota when the API reports
+ it. A low quota turns amber. If the quota is exhausted, live screens show a
+ friendly error; the demo data remains available.
+
+ The free RailRadar plan is limited. Normal demo use does not call RailRadar at
+ all. Only live mode consumes quota.
+
+
+================================================================================
+ 12. EMAIL DELIVERY
+================================================================================
+
+ 12.1 WHAT IS SENT
+ -----------------
+   The backend renders one email containing:
+   - PNR, train number/name, class, quota and journey date
+   - from/to stations, departure/arrival, duration and distance
+   - passenger table with coach, seat and berth
+   - invoice with fare breakup, convenience fee and total paid
+   - payment method, transaction ID, auth code and paid-at time
+   - a demo disclaimer
+
+   The subject is:
+     Rail Bandhu ticket confirmed - PNR <PNR> - <train name>
+
+   The same HTML is attached as:
+     RailBandhu-Ticket-<PNR>.html
+
+ 12.2 MODES
+ ----------
+   SMTP
+     Active when SMTP_HOST, SMTP_USER and SMTP_PASS are set.
+     Works with Gmail (App Password), Outlook, Brevo, Mailgun, SendGrid,
+     Amazon SES and any standard SMTP provider.
+     Connection, greeting and socket timeouts prevent hangs.
+
+   EMAILJS
+     Active when EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID and
+     EMAILJS_PUBLIC_KEY are set. The template receives:
+       to_email, subject, message_html, message_text
+     Requests time out after 20 seconds.
+
+   ETHEREAL (default when no credentials exist)
+     Nodemailer creates a free test account at server startup. Messages are
+     captured, not delivered to real inboxes. The API returns a public preview
+     URL:
+       https://ethereal.email/message/...
+     The confirmation card shows "Open test email". The preview displays the
+     real rendered email and attachment. This is enough to demonstrate the
+     entire email flow, but the passenger does not receive the message.
+
+   NONE
+     If EMAIL_TEST_MODE=false and no SMTP/EmailJS credentials exist, the API
+     returns 503 EMAIL_NOT_CONFIGURED.
+
+ 12.3 UI STATES
+ --------------
+   idle      preparing
+   sending   request in flight
+   sent      real delivery succeeded
+   preview   Ethereal capture succeeded; preview URL available
+   failed    readable error; Retry email button appears
+
+   If the page is refreshed while the state is "sending", the restored state
+   becomes "failed" with a clear message, so the UI never hangs.
+
+ 12.4 REAL INBOX SETUP (OPTIONAL)
+ --------------------------------
+   1. Create a Gmail App Password at:
+        https://myaccount.google.com/apppasswords
+   2. Copy .env.example to .env.
+   3. Set:
+        SMTP_HOST=smtp.gmail.com
+        SMTP_PORT=587
+        SMTP_SECURE=false
+        SMTP_USER=you@gmail.com
+        SMTP_PASS=your_16_character_app_password
+        MAIL_FROM=Rail Bandhu <you@gmail.com>
+   4. Restart with:
+        npm start
+   5. Book again. The same email is delivered to the passenger's real inbox.
+
+   This step is optional for the demo. It is the only way to deliver to an
+   arbitrary real address: a sending account or service is always required.
+   No free service can relay mail to any inbox without credentials.
+
+ 12.5 TROUBLESHOOTING EMAIL
+ --------------------------
+   "Test inbox" shown:
+     Expected with no SMTP/EmailJS credentials. Use Download ticket + invoice,
+     print/save PDF, or configure SMTP.
+   "EMAIL_NOT_CONFIGURED":
+     EMAIL_TEST_MODE is false and no SMTP/EmailJS keys exist. Set credentials
+     or set EMAIL_TEST_MODE=true.
+   "The local booking API is offline":
+     The site is open but the backend is not running. Use npm start (not a
+     static file server) so /api is available.
+   Gmail rejects the login:
+     Use an App Password, not the normal account password. Enable 2-step
+     verification first.
+   Email takes a long time on the first send:
+     Ethereal account provisioning happens once at startup. The server warms
+     it up automatically; the first booking may still take a few seconds.
+
+
+================================================================================
+ 13. TICKET DOCUMENT DOWNLOAD AND PRINT
+================================================================================
+
+ The confirmation screen always provides three independent ways to keep the
+ booking documents:
+
+   1. Open test email
+      Shows the Ethereal-captured email and its HTML attachment (demo mode).
+
+   2. Download ticket + invoice
+      POSTs to /api/ticket-document and saves RailBandhu-Ticket-<PNR>.html.
+      The file is standalone: open it in any browser and print or save PDF.
+      It contains the same ticket and invoice as the email.
+
+   3. Print / Save PDF
+      Uses the browser print dialog on the on-screen ticket. Print styles hide
+      navigation and buttons.
+
+ These work without SMTP, EmailJS or any third-party service. They are the
+ guaranteed fallback when email delivery is not configured.
+
+ There is also "Open email draft", a mailto: link containing the plain-text
+ ticket. It opens the user's mail application with the ticket details and the
+ contact email pre-filled; the user presses Send. This is useful when a desktop
+ mail client is configured, but it is not a replacement for server delivery.
+
+
+================================================================================
+ 14. PAYMENT GATEWAY (SANDBOX)
+================================================================================
+
+ Component: src/components/PaymentGateway.tsx
+
+ Methods:
+   UPI          enter a valid ID such as name@bank and press Verify
+   Card         4111 1111 1111 1111, any future expiry (for example 12/30),
+                CVV 123
+   Net banking  choose any bank
+   Wallet       choose any wallet
+
+ Stages:
+   form -> OTP -> processing -> success
+
+ OTP:
+   123456
+
+ The processing stage runs for about 2.85 seconds, then calls onSuccess() with
+ a receipt:
+   method, methodLabel, detail, txnId, authCode, paidAt, amount
+
+ No real payment is made. No card data leaves the browser. The gateway is
+ entirely local and simulated.
+
+
+================================================================================
+ 15. CONFIGURATION (.ENV) - ALL OPTIONAL
+================================================================================
+
+ The app works with no .env at all. Create one only if you want live data or
+ real email.
+
+ RailRadar (browser, build time)
+ -------------------------------
+   VITE_RAILRADAR_API_KEY=your_key
+   VITE_RAILRADAR_API_BASE=https://api.railradar.in/v1
+
+   Changing these requires a rebuild. npm start rebuilds automatically.
+
+ IRCTC (backend, server only)
+ ----------------------------
+   IRCTC_API_KEY=your_key
+   IRCTC_API_BASE=https://api.irctc.dev
+
+ SMTP email (backend only)
+ -------------------------
+   SMTP_HOST=smtp.gmail.com
+   SMTP_PORT=587
+   SMTP_SECURE=false
+   SMTP_USER=you@gmail.com
+   SMTP_PASS=your_16_character_app_password
+   MAIL_FROM=Rail Bandhu <you@gmail.com>
+
+ EmailJS (backend only)
+ ----------------------
+   EMAILJS_SERVICE_ID=service_xxx
+   EMAILJS_TEMPLATE_ID=template_xxx
+   EMAILJS_PUBLIC_KEY=your_public_key
+   EMAILJS_PRIVATE_KEY=your_private_key
+
+ Email test mode
+ ---------------
+   EMAIL_TEST_MODE=true    default; use Ethereal when no credentials exist
+   EMAIL_TEST_MODE=false   disable Ethereal; return 503 when no credentials
+
+ Server
+ ------
+   PORT=8787               backend and site port
+
+ Priority order for email:
+   1. SMTP if SMTP_HOST + SMTP_USER + SMTP_PASS are all set
+   2. EmailJS if the service, template and public key are set
+   3. Ethereal if EMAIL_TEST_MODE is not false
+   4. none
+
+
+================================================================================
+ 16. RUNNING THE APP
+================================================================================
+
+ 16.1 NORMAL / PRODUCTION (recommended, including friend's computer)
+ -------------------------------------------------------------------
+   npm install
+   npm start
+
+   What happens:
+     prestart -> vite build -> dist/
+     start    -> node server/index.mjs
+     site     -> http://127.0.0.1:8787
+     api      -> http://127.0.0.1:8787/api
+
+   No separate build command is needed. npm start rebuilds every time, so the
+   served bundle always matches the current source and .env.
+
+ 16.2 DEVELOPMENT
+ ----------------
+   npm run dev:all
+
+   Frontend: http://localhost:5173
+   Backend : http://127.0.0.1:8787
+   Vite proxies /api to the backend.
+
+   Other scripts:
+     npm run dev       Vite only
+     npm run dev:api   backend only
+     npm run build     production build only
+     npm run preview   preview the production build
+     npm run typecheck TypeScript check
+     npm run lint      ESLint
+
+ 16.3 CHANGING THE PORT
+ ----------------------
+   PowerShell:
+     $env:PORT=8788; npm start
+   Command Prompt:
+     set PORT=8788 && npm start
+   macOS / Linux:
+     PORT=8788 npm start
+
+ 16.4 STOPPING
+ -------------
+   Press Ctrl + C in the terminal running npm start.
+
+
+================================================================================
+ 17. SHARING A PUBLIC DEMO LINK
+================================================================================
+
+ 1. Build and start the app:
+      npm start
+
+ 2. In a second terminal, expose port 8787:
+      cloudflared tunnel --url http://127.0.0.1:8787
+
+    cloudflared prints a temporary public URL such as:
+      https://something.trycloudflare.com
+
+ 3. Share that URL. It serves the site and /api from your computer.
+
+ 4. The link stops working when cloudflared or npm start is closed. Restart
+    both and share the new URL.
+
+ Important for a public demo:
+   - Build WITHOUT your RailRadar key so the key is not shipped in the public
+     bundle. Temporarily rename .env, run npm run build, then start the server
+     and tunnel. The public visitor gets the complete demo mode.
+   - The public visitor can use the Ethereal email capture and download the
+     ticket. Real email delivery still requires SMTP credentials on the host.
+   - Stop the tunnel when the demo is over. The email endpoint accepts requests
+     from anyone who has the link.
+
+ Alternative tunnels:
+   ngrok requires a free account and authtoken:
+     ngrok config add-authtoken <YOUR_TOKEN>
+     ngrok http 8787
+
+
+================================================================================
+ 18. FRIEND'S GUIDE: CLONE, INSTALL AND RUN
+================================================================================
+
+ Requirements:
+   Node.js 18 or newer. Check with:
+     node -v
+     npm -v
+
+ Steps:
+   1. Clone the repository:
+        git clone <repository-url>
+        cd setu-rail-booking
+
+   2. Install once:
+        npm install
+
+   3. Start:
+        npm start
+
+   4. Open:
+        http://127.0.0.1:8787
+
+ That is all. No API key. No .env. No build command.
+
+ The friend sees the complete demo:
+   - four demo trains load automatically
+   - station board and running status show labelled demo data
+   - seat maps, fares, payment and OTP work
+   - the booking survives a browser refresh
+   - the confirmation screen shows the ticket and invoice
+   - the email is captured in the Ethereal test inbox with a preview link
+   - the ticket can be downloaded as HTML or printed to PDF
+
+ If port 8787 is busy:
+   PowerShell:
+     $env:PORT=8788; npm start
+   Then open http://127.0.0.1:8788.
+
+ If npm install fails:
+   - Check the Node version (18+).
+   - Delete node_modules and package-lock.json, then run npm install again.
+   - A corporate proxy or offline network can block npm; use a normal
+     connection.
+
+
+================================================================================
+ 19. DEMO AND TEST DATA
+================================================================================
+
+ Demo trains:
+   18237  Chhattisgarh Express          Raipur -> New Delhi
+   12441  Bilaspur - New Delhi Rajdhani
+   18239  Shivnath Express              Raipur -> NSCB Jabalpur
+   20825  Vande Bharat Express          Raipur -> Nagpur
+
+ Demo station board:
+   Raipur Jn (R), next 2/4/6/8 hours, with platforms and delays.
+
+ Demo running status:
+   18237, 12441, 12919, 12854 have detailed routes.
+   Any other 5-digit number gets a generic demo route.
+
+ Payment:
+   UPI          name@bank
+   Card         4111 1111 1111 1111
+   Expiry       any future date, for example 12/30
+   CVV          123
+   OTP          123456
+
+ Email:
+   Default     Ethereal test inbox, preview link on the confirmation screen
+   Real        configure SMTP or EmailJS (section 12.4)
+
+ Ticket document:
+   Download ticket + invoice  -> RailBandhu-Ticket-<PNR>.html
+   Print / Save PDF           -> browser print dialog
+
+ Persistence:
+   localStorage key railbandhu:booking:v1
+   Refresh restores the current step and data.
+   Book another journey clears the booking snapshot.
+
+
+================================================================================
+ 20. TROUBLESHOOTING
+================================================================================
+
+ BLANK PAGE AFTER STARTING
+   1. Open the exact URL printed in the terminal:
+        http://127.0.0.1:8787
+   2. Hard-refresh with Ctrl + Shift + R.
+   3. Check the terminal for build or server errors.
+   4. Make sure port 8787 is free. Close old servers or set PORT.
+   5. Delete node_modules and run npm install, then npm start.
+   6. Disable VPN or ad-blocker extensions for localhost, or try an
+      Incognito window.
+
+ "API OFFLINE" OR EMAIL/DOWNLOAD FAILS
+   The site is being served without the backend. Use npm start or npm run
+   dev:all. Opening dist/index.html directly from the file system does not
+   provide /api.
+
+ DEMO DATA STILL SHOWS AFTER ADDING A KEY
+   VITE_* variables are read at build time. Restart with npm start so prestart
+   rebuilds the bundle. Confirm .env is in the project root and the key has no
+   quotes or extra spaces.
+
+ REAL TRAIN SEARCH FAILS
+   - Check the RailRadar key and quota.
+   - The free plan is limited; wait for the quota to reset or use demo mode.
+   - A network/VPN can block api.railradar.in.
+   - Remove the key to return to demo mode.
+
+ REAL IRCTC FARES/SEATS DO NOT APPEAR
+   - IRCTC_API_KEY is read by the backend at startup. Restart after editing
+     .env.
+   - Check /api/health: "irctc": true means the key was loaded.
+   - The IRCTC free plan has a call limit; failures fall back to simulated
+     values with a note.
+
+ EMAIL SAYS "TEST INBOX"
+   Expected without SMTP/EmailJS. This is not a bug. Use Download ticket +
+   invoice or configure SMTP as described in section 12.4.
+
+ EMAIL FAILS WITH GMAIL
+   - Use an App Password, not the account password.
+   - Enable 2-step verification first.
+   - Use port 587 with SMTP_SECURE=false (STARTTLS) or port 465 with
+     SMTP_SECURE=true.
+   - Check that MAIL_FROM is the same account or an allowed alias.
+
+ EMAIL FAILS WITH EMAILJS
+   - The template must contain {{message_html}} and {{subject}} (and ideally
+     {{to_email}} and {{message_text}}).
+   - The service must allow the recipient domain.
+   - Check the public/private keys.
+
+ BOOKING DISAPPEARED AFTER A REFRESH
+   - localStorage may be disabled or cleared.
+   - Private/Incognito windows usually discard storage when closed.
+   - A different browser or origin has a different storage area.
+   - Check that the URL is the same (127.0.0.1 vs localhost are different
+     origins).
+   - The snapshot key is railbandhu:booking:v1.
+
+ PORT ALREADY IN USE
+   Close the old process or choose another port:
+     PowerShell: $env:PORT=8788; npm start
+     CMD:        set PORT=8788 && npm start
+     macOS:      PORT=8788 npm start
+
+ PUBLIC LINK DOES NOT LOAD
+   - Keep npm start running.
+   - Keep cloudflared running.
+   - Quick tunnels get a new URL every restart.
+   - Some college/corporate networks block tunnel domains.
+
+ FIRST EMAIL IS SLOW
+   Ethereal account creation is warmed up at server startup, but the first
+   message can still take a few seconds. The UI shows "sending" and never
+   hangs.
+
+
+================================================================================
+ 21. WHAT IS REAL VS SIMULATED
+================================================================================
+
+ DEFAULT DEMO MODE (no keys)
+ ---------------------------
+
+   Part                                      Source
+   ----------------------------------------  --------------------------------
+   Stations (8,670)                          Real, bundled locally
+   Train search, timings, run days, distance Bundled demo sample
+   Live running status, platform, route      Bundled demo sample
+   Live station board                        Bundled demo sample
+   Coach numbers and berth types             Generated locally
+   Fares and fare breakup                    Simulated
+   Seat availability (counts, RAC, WL)       Simulated
+   Exact seat-level occupancy                Simulated
+   Payment, OTP, transaction/auth codes      Simulated sandbox
+   PNR and QR code                           Simulated
+   Email delivery                            Ethereal test inbox
+   Ticket + invoice document                 Real downloadable HTML / PDF
+   Booking persistence                       Real localStorage snapshot
+
+ LIVE MODE (optional keys)
+ -------------------------
+
+   With VITE_RAILRADAR_API_KEY:
+     train search, live running status, station board, coach composition and
+     berth blueprints become real RailRadar data.
+
+   With IRCTC_API_KEY:
+     fares and seat availability become real IRCTC data.
+
+   With SMTP or EmailJS:
+     the ticket email is delivered to the passenger's real inbox.
+
+ The UI labels the active mode on the search screen, results, seat screen,
+ email card and footer.
+
+
+================================================================================
+ 22. SECURITY NOTES AND LIMITATIONS
+================================================================================
+
+   - This is a demo. The ticket, PNR, QR code and payment are not real and are
+     not valid for travel.
+   - No real money moves. Card and UPI details are validated locally and are
+     never sent anywhere.
+   - VITE_* values are compiled into the browser bundle. The RailRadar key is
+     therefore public in any build that contains it. Do not publish such a
+     build. The IRCTC key is server-side only.
+   - SMTP and EmailJS credentials are read only by the backend and are never
+     sent to the browser.
+   - Passenger names, ages, seats and contact details are stored in the
+     browser's localStorage for refresh persistence. They are not uploaded to
+     a database. Clearing site data removes them.
+   - Ethereal is a test inbox. It does not deliver to the passenger's real
+     address. Real delivery requires SMTP, EmailJS or another transactional
+     email service.
+   - A public tunnel exposes the local server, including /api/send-ticket and
+     /api/ticket-document. Share it only for a demo and stop it afterwards.
+   - The app is not affiliated with Indian Railways or IRCTC.
+
+
+================================================================================
+ 23. VERIFICATION CHECKLIST
+================================================================================
+
+ The following were verified on 20 November 2026:
+
+   [x] npm run typecheck passes.
+   [x] npm run build passes.
+   [x] A build made without a RailRadar key contains no rg_... key.
+   [x] Demo search returns four trains with DEMO DATA labels.
+   [x] Demo station board renders with DEMO BOARD.
+   [x] Demo running status renders with DEMO SAMPLE for 18237.
+   [x] Seat screen renders a coach map and selectable seats.
+   [x] Payment flow completes with UPI and OTP 123456.
+   [x] Confirmation screen shows PNR, ticket, invoice, download and print.
+   [x] Refresh on the passenger step restores the same values.
+   [x] Refresh on the confirmation step restores the PNR and email preview.
+   [x] /api/send-ticket returns mode "ethereal" with a preview URL.
+   [x] The Ethereal preview contains the PNR, passenger and INVOICE section.
+   [x] /api/ticket-document returns 200 with an HTML attachment.
+   [x] The downloaded HTML contains the PNR, passenger and invoice.
+   [x] npm start builds automatically through the prestart script.
+   [x] /api/health responds and reports the email mode.
+
+ Not verified automatically:
+   - Real SMTP delivery to a live inbox (requires the user's credentials).
+   - Real IRCTC fare/availability responses (requires an IRCTC key).
+   - Real RailRadar live responses in the published demo build (built
+     without a key on purpose).
+
+
+================================================================================
+ END OF GUIDE
+================================================================================

@@ -66,7 +66,6 @@ app.get("/api/health", (_req, res) => {
     irctc: Boolean(IRCTC_API_KEY),
     email: emailMode() !== "none",
     emailMode: emailMode(),
-    railradar: true,
     time: new Date().toISOString(),
   });
 });
@@ -189,6 +188,28 @@ app.get("/api/availability", async (req, res) => {
 });
 
 /* ------------------------------------------------------------------ */
+/* Ticket document download (ticket + invoice as one HTML file)        */
+/* ------------------------------------------------------------------ */
+
+app.post("/api/ticket-document", (req, res) => {
+  const { ticket } = req.body || {};
+  if (!ticket || !ticket.pnr || !ticket.train) {
+    return res
+      .status(400)
+      .json({ success: false, code: "BAD_TICKET", message: "Ticket details are missing." });
+  }
+
+  const { html } = renderTicketEmail(ticket);
+  const safePnr = String(ticket.pnr).replace(/[^A-Za-z0-9-]/g, "");
+  res.setHeader("Content-Type", "text/html; charset=utf-8");
+  res.setHeader(
+    "Content-Disposition",
+    `attachment; filename="RailBandhu-Ticket-${safePnr}.html"`
+  );
+  res.send(html);
+});
+
+/* ------------------------------------------------------------------ */
 /* Email delivery                                                     */
 /* ------------------------------------------------------------------ */
 
@@ -203,6 +224,9 @@ function getTransport() {
         port: SMTP_PORT,
         secure: SMTP_SECURE,
         auth: { user: SMTP_USER, pass: SMTP_PASS },
+        connectionTimeout: 15000,
+        greetingTimeout: 15000,
+        socketTimeout: 30000,
       });
     }
     return Promise.resolve({ transport: smtpTransport, mode: "smtp" });
@@ -216,6 +240,9 @@ function getTransport() {
           port: account.smtp.port,
           secure: account.smtp.secure,
           auth: { user: account.user, pass: account.pass },
+          connectionTimeout: 15000,
+          greetingTimeout: 15000,
+          socketTimeout: 30000,
         });
         return { transport, account };
       });
@@ -226,23 +253,48 @@ function getTransport() {
   return Promise.resolve({ transport: null, mode: "none" });
 }
 
+/* Create the Ethereal account at startup so the first real booking does
+   not wait for account provisioning. */
+function warmUpEmail() {
+  const mode = emailMode();
+  if (mode === "ethereal") {
+    void getTransport().catch(() => {
+      /* ignore — retried on the next send */
+    });
+  }
+}
+
 async function sendWithEmailJs({ to, subject, html, text }) {
-  const response = await fetch("https://api.emailjs.com/api/v1.0/email/send", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      service_id: EMAILJS_SERVICE_ID,
-      template_id: EMAILJS_TEMPLATE_ID,
-      user_id: EMAILJS_PUBLIC_KEY,
-      accessToken: EMAILJS_PRIVATE_KEY || undefined,
-      template_params: {
-        to_email: to,
-        subject,
-        message_html: html,
-        message_text: text,
-      },
-    }),
-  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 20000);
+  let response;
+  try {
+    response = await fetch("https://api.emailjs.com/api/v1.0/email/send", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        service_id: EMAILJS_SERVICE_ID,
+        template_id: EMAILJS_TEMPLATE_ID,
+        user_id: EMAILJS_PUBLIC_KEY,
+        accessToken: EMAILJS_PRIVATE_KEY || undefined,
+        template_params: {
+          to_email: to,
+          subject,
+          message_html: html,
+          message_text: text,
+        },
+      }),
+      signal: controller.signal,
+    });
+  } catch (error) {
+    throw new Error(
+      error.name === "AbortError"
+        ? "EmailJS did not respond within 20 seconds."
+        : "Could not reach EmailJS."
+    );
+  } finally {
+    clearTimeout(timer);
+  }
   if (!response.ok) {
     const detail = await response.text();
     throw new Error(`EmailJS rejected the message (HTTP ${response.status}): ${detail.slice(0, 300)}`);
@@ -328,4 +380,5 @@ app.listen(PORT, "127.0.0.1", () => {
   console.log(`Rail Bandhu API on http://127.0.0.1:${PORT}`);
   console.log(`  IRCTC fares/availability: ${IRCTC_API_KEY ? "enabled" : "not configured"}`);
   console.log(`  Email mode: ${emailMode()}`);
+  warmUpEmail();
 });

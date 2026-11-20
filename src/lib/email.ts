@@ -51,7 +51,7 @@ export interface TicketEmailPayload {
 
 export interface EmailSendResult {
   success: boolean;
-  mode: "smtp" | "emailjs" | "ethereal" | string;
+  mode: "smtp" | "emailjs" | "ethereal" | "preview" | string;
   message: string;
   previewUrl?: string | null;
   messageId?: string;

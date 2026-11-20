@@ -1,0 +1,18 @@
+# Optional Cloudflare Worker secrets. Set them with:
+#   npx wrangler secret put IRCTC_API_KEY
+#   npx wrangler secret put EMAILJS_SERVICE_ID
+#   npx wrangler secret put EMAILJS_TEMPLATE_ID
+#   npx wrangler secret put EMAILJS_PUBLIC_KEY
+#   npx wrangler secret put EMAILJS_PRIVATE_KEY
+#
+# For local `wrangler dev`, copy this file to .dev.vars and fill in values.
+# Never commit real keys.
+
+# Real IRCTC fares + seat availability (free key: https://irctc.dev/dashboard)
+# IRCTC_API_KEY=
+
+# Real ticket email delivery (https://www.emailjs.com)
+# EMAILJS_SERVICE_ID=
+# EMAILJS_TEMPLATE_ID=
+# EMAILJS_PUBLIC_KEY=
+# EMAILJS_PRIVATE_KEY=

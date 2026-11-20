@@ -5,9 +5,33 @@
 
  Version      : 1.1.0
  Frontend     : React 18 + TypeScript + Vite 5
- Backend      : Node.js 18+ + Express 5
- Data sources : bundled demo data by default; RailRadar and IRCTC optional
+ Backend      : Node.js 18+ + Express 5 locally;
+                Cloudflare Worker in production
+ Data sources : live RailRadar in production; IRCTC optional; demo only
+                when no key is configured locally
  Last updated : 20 November 2026
+
+ CLOUDFLARE DEPLOYMENT
+ ---------------------
+ Live app: https://rail-bandhu.rail-bandhu.workers.dev
+ The same UI runs on Cloudflare Workers with static assets. RailRadar is
+ proxied server-side through /api/railradar, so train lists, station
+ boards, running status and coach layouts are real and the API key stays
+ in the Worker secret RAILRADAR_API_KEY (never in the browser bundle).
+ Timetable, coach, station and live-status responses are cached in KV so
+ visitors share fewer upstream requests.
+
+ The Worker implements /api/health, /api/fare, /api/availability,
+ /api/send-ticket, /api/ticket-document and the test-inbox preview. Email
+ is delivered for real when the EmailJS secrets are configured; otherwise
+ the rendered ticket email is captured in a Cloudflare preview inbox.
+ Setting IRCTC_API_KEY adds live fares and seat availability; without it
+ those values are clearly labelled estimates. Download, print, refresh
+ persistence, seats, payment and all booking steps work as described
+ below. Run `npm run deploy` to publish. See README.md for details.
+
+ The RailRadar free plan allows 100 requests per month. Caching slows
+ quota use, but production traffic needs a paid RailRadar plan.
 
  DISCLAIMER
  ----------

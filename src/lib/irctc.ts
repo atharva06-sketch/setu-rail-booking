@@ -26,7 +26,7 @@ export interface BackendHealth {
   ok: boolean;
   irctc: boolean;
   email: boolean;
-  emailMode: "smtp" | "emailjs" | "ethereal" | "none" | string;
+  emailMode: "smtp" | "emailjs" | "ethereal" | "preview" | "none" | string;
   offline?: boolean;
 }
 

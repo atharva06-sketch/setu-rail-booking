@@ -214,7 +214,10 @@ interface SearchFormState {
 
 const DEFAULT_FORM: SearchFormState = {
   from: "R",
-  to: "NDLS",
+  /* Raipur -> New Delhi has no direct train on many weekdays in the real
+     timetable. In live mode the busiest Raipur route is a better landing
+     page; Raipur -> New Delhi remains one click away in Quick routes. */
+  to: HAS_API_KEY ? "BSP" : "NDLS",
   date: dateString(1),
   cls: "SL",
   quota: "general",
@@ -1065,10 +1068,10 @@ export default function TrainBooking() {
 
     try {
       const result = await sendTicketEmail(payload.contact.email, payload);
-      if (result.mode === "ethereal") {
+      if (result.mode === "ethereal" || result.mode === "preview") {
         setEmailState({
           status: "preview",
-          message: result.message || "Test email captured by Ethereal.",
+          message: result.message || "Test email captured for the demo.",
           previewUrl: result.previewUrl ?? undefined,
         });
       } else {
@@ -1198,7 +1201,9 @@ export default function TrainBooking() {
               <div style={{ fontFamily: FONT_MONO, fontWeight: 600, fontSize: 18, lineHeight: 1.1 }}>
                 Rail Bandhu
               </div>
-              <div style={{ fontSize: 10, color: "#BFD3E6" }}>Raipur Division · College Project</div>
+              <div style={{ fontSize: 10, color: "#BFD3E6" }}>
+                {HAS_API_KEY ? "Raipur Division · Live rail data" : "Raipur Division · College Project"}
+              </div>
             </div>
           </div>
           <div className="flex items-center gap-2" style={{ fontSize: 11, color: "#BFD3E6" }}>
@@ -1421,11 +1426,24 @@ export default function TrainBooking() {
                   <span
                     style={{
                       fontSize: 10,
-                      color: backend?.email && backend.emailMode !== "ethereal" ? GREEN : ORANGE_DARK,
+                      color:
+                        backend?.email &&
+                        backend.emailMode !== "ethereal" &&
+                        backend.emailMode !== "preview"
+                          ? GREEN
+                          : ORANGE_DARK,
                       background:
-                        backend?.email && backend.emailMode !== "ethereal" ? "#EAF5EE" : "#FDF4E3",
+                        backend?.email &&
+                        backend.emailMode !== "ethereal" &&
+                        backend.emailMode !== "preview"
+                          ? "#EAF5EE"
+                          : "#FDF4E3",
                       border: `1px solid ${
-                        backend?.email && backend.emailMode !== "ethereal" ? "#BFE3CB" : "#F3D9A5"
+                        backend?.email &&
+                        backend.emailMode !== "ethereal" &&
+                        backend.emailMode !== "preview"
+                          ? "#BFE3CB"
+                          : "#F3D9A5"
                       }`,
                       borderRadius: 3,
                       padding: "2px 7px",
@@ -1439,7 +1457,9 @@ export default function TrainBooking() {
                           ? "EMAIL: EMAILJS DELIVERY"
                           : backend?.emailMode === "ethereal"
                             ? "EMAIL: TEST INBOX (ETHEREAL)"
-                            : "EMAIL: NOT CONFIGURED"}
+                            : backend?.emailMode === "preview"
+                              ? "EMAIL: TEST INBOX (CLOUDFLARE)"
+                              : "EMAIL: NOT CONFIGURED"}
                   </span>
                 </div>
               </form>
@@ -1622,14 +1642,16 @@ export default function TrainBooking() {
                     >
                       Try again
                     </button>
-                    <button
-                      type="button"
-                      className="btn-ghost"
-                      style={{ padding: "9px 16px", fontSize: 13 }}
-                      onClick={loadDemoTrains}
-                    >
-                      Load demo trains
-                    </button>
+                    {!HAS_API_KEY && (
+                      <button
+                        type="button"
+                        className="btn-ghost"
+                        style={{ padding: "9px 16px", fontSize: 13 }}
+                        onClick={loadDemoTrains}
+                      >
+                        Load demo trains
+                      </button>
+                    )}
                   </div>
                 </div>
               )}
@@ -1950,7 +1972,10 @@ export default function TrainBooking() {
                                 />
                               )}
                               <button
+                                type="button"
                                 title={`Seat ${seat.num} · ${seat.type}`}
+                                disabled={seat.booked}
+                                aria-pressed={isSelected}
                                 onClick={() => toggleSeat(seat)}
                                 className={`seat-btn${seat.booked ? " booked" : isSelected ? " selected" : ""}`}
                               >
@@ -2304,13 +2329,16 @@ export default function TrainBooking() {
                             ? "EmailJS"
                             : backend?.emailMode === "ethereal"
                               ? "Ethereal test inbox"
-                              : "not configured"}
+                              : backend?.emailMode === "preview"
+                                ? "Cloudflare preview inbox"
+                                : "not configured"}
                       </span>
                     </div>
                     <div style={{ fontSize: 12, color: MUTED, marginTop: 2 }}>
                       {emailState.message || "Preparing your e-ticket…"}
                     </div>
-                    {backend?.emailMode === "ethereal" && (
+                    {(backend?.emailMode === "ethereal" ||
+                      backend?.emailMode === "preview") && (
                       <div
                         style={{
                           marginTop: 8,
@@ -2323,41 +2351,34 @@ export default function TrainBooking() {
                           lineHeight: 1.5,
                         }}
                       >
-                        <strong>Test inbox.</strong> Ethereal captures the email but does not
-                        deliver it to {contact.email}. Use{" "}
-                        <strong>Download ticket + invoice</strong> for the actual document, or add
-                        SMTP details to <code>.env</code> to send to a real inbox.
+                        <strong>Test inbox.</strong> The email is captured and shown as a
+                        preview; it is not delivered to {contact.email}. Use{" "}
+                        <strong>Download ticket + invoice</strong> for the actual document, or
+                        configure EmailJS credentials to send to a real inbox.
                         <details style={{ marginTop: 6 }}>
                           <summary style={{ cursor: "pointer", fontWeight: 600 }}>
                             How to send to a real inbox
                           </summary>
                           <ol style={{ margin: "6px 0 0 16px", padding: 0, lineHeight: 1.6 }}>
                             <li>
-                              Create a Gmail App Password at{" "}
-                              <a
-                                href="https://myaccount.google.com/apppasswords"
-                                target="_blank"
-                                rel="noreferrer"
-                                style={{ color: "#7A4E00", textDecoration: "underline" }}
-                              >
-                                myaccount.google.com/apppasswords
-                              </a>
-                              .
+                              Create a free EmailJS account and an email template containing{" "}
+                              <code>{"{{message_html}}"}</code>, <code>{"{{subject}}"}</code> and{" "}
+                              <code>{"{{to_email}}"}</code>.
                             </li>
                             <li>
-                              Copy <code>.env.example</code> to <code>.env</code> and set{" "}
-                              <code>SMTP_HOST=smtp.gmail.com</code>,{" "}
-                              <code>SMTP_PORT=587</code>, <code>SMTP_USER=you@gmail.com</code>,{" "}
-                              <code>SMTP_PASS=the 16-character app password</code>.
+                              Add the <code>EMAILJS_SERVICE_ID</code>,{" "}
+                              <code>EMAILJS_TEMPLATE_ID</code> and{" "}
+                              <code>EMAILJS_PUBLIC_KEY</code> values as Worker secrets (
+                              <code>wrangler secret put</code>).
                             </li>
                             <li>
-                              Restart with <code>npm start</code>. The same ticket email is then
-                              delivered to the passenger's real inbox.
+                              Redeploy. The same ticket email is then delivered to the passenger's
+                              real inbox.
                             </li>
                           </ol>
                           <div style={{ marginTop: 4 }}>
-                            Not needed for the demo: the test inbox, download and print buttons
-                            already work on any computer.
+                            Not needed for the demo: the preview, download and print buttons
+                            already work.
                           </div>
                         </details>
                       </div>
@@ -2641,7 +2662,9 @@ export default function TrainBooking() {
           <div className="flex items-center gap-2">
             <TrainFront size={16} color={BLUE_DARK} />
             <span style={{ fontFamily: FONT_MONO, fontSize: 12, fontWeight: 600 }}>Rail Bandhu</span>
-            <span style={{ fontSize: 10, color: "#9AAAB8" }}>· College project demo</span>
+            <span style={{ fontSize: 10, color: "#9AAAB8" }}>
+              · {HAS_API_KEY ? "Live rail data" : "College project demo"}
+            </span>
           </div>
           <div className="flex flex-wrap items-center gap-3" style={{ fontSize: 10, color: MUTED }}>
             <span>
@@ -2656,7 +2679,9 @@ export default function TrainBooking() {
                   ? "EmailJS"
                   : backend?.emailMode === "ethereal"
                     ? "Ethereal test inbox"
-                    : "not configured"}
+                    : backend?.emailMode === "preview"
+                      ? "Cloudflare preview inbox"
+                      : "not configured"}
             </span>
             <span>Payment: SetuPay sandbox</span>
             {quota !== null && (

@@ -8,7 +8,12 @@
 const API_BASE = import.meta.env.VITE_RAILRADAR_API_BASE ?? "https://api.railradar.in/v1";
 const API_KEY = import.meta.env.VITE_RAILRADAR_API_KEY ?? "";
 
-export const HAS_API_KEY = Boolean(API_KEY);
+/* The Cloudflare build proxies RailRadar through /api/railradar, so live mode
+   works without shipping the key to the browser. Direct mode still supports a
+   VITE_ key for local development. */
+const PROXY_MODE = API_BASE.startsWith("/api/railradar");
+
+export const HAS_API_KEY = Boolean(API_KEY) || PROXY_MODE;
 
 export class RailRadarError extends Error {
   code: string;
@@ -307,9 +312,9 @@ async function request<T>(
   params: Record<string, string | number | boolean | undefined> = {},
   options: RequestOptions = {}
 ): Promise<T> {
-  if (!API_KEY) {
+  if (!API_KEY && !PROXY_MODE) {
     throw new RailRadarError(
-      "No RailRadar API key found. Add VITE_RAILRADAR_API_KEY to your .env file.",
+      "RailRadar live data is not configured. Add the RAILRADAR_API_KEY Worker secret (or VITE_RAILRADAR_API_KEY for local development).",
       "NO_API_KEY",
       0
     );
@@ -337,7 +342,7 @@ async function request<T>(
     try {
       response = await fetch(url, {
         headers: {
-          Authorization: `Bearer ${API_KEY}`,
+          ...(API_KEY ? { Authorization: `Bearer ${API_KEY}` } : {}),
           Accept: "application/json",
         },
         signal: controller.signal,

@@ -1,0 +1,27 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "rail-bandhu",
+  "main": "worker/index.mjs",
+  "compatibility_date": "2026-11-20",
+  "workers_dev": true,
+  "vars": {
+    "IRCTC_API_BASE": "https://api.irctc.dev",
+    "RAILRADAR_API_BASE": "https://api.railradar.in/v1",
+    "EMAIL_TEST_MODE": "true"
+  },
+  "kv_namespaces": [
+    {
+      "binding": "EMAIL_PREVIEWS",
+      "id": "37e2f7d78e28449f8dbfba79df2775f4"
+    }
+  ],
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": true
+  },
+  "observability": {
+    "enabled": true
+  }
+}

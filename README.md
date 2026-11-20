@@ -1,7 +1,9 @@
 # Rail Bandhu — Train Ticket Booking (College Project)
 
-A full train-ticket booking flow for Indian Railways, built with **React + TypeScript + Vite** and a
-small **Node/Express backend**.
+**Live demo:** <https://rail-bandhu.rail-bandhu.workers.dev>
+
+A full train-ticket booking flow for Indian Railways, built with **React + TypeScript + Vite** and
+served by a small API (Express locally, a Cloudflare Worker in production).
 
 **Zero setup by default.** A fresh clone runs the complete demo with only:
 
@@ -114,10 +116,43 @@ The confirmation screen always offers:
 The Ethereal fallback is only a test inbox; no free service can deliver mail to arbitrary real
 addresses without some sending credential.
 
-## Optional: real train and IRCTC data
+### Cloudflare Workers deployment
 
-The demo is complete without them. To use live data, create `.env` **before** running `npm start`
-(the RailRadar key is compiled into the browser bundle at build time):
+The app is also deployed as a single Cloudflare Worker with static assets. The Worker implements the
+same `/api` routes as the Express server, including a server-side RailRadar proxy.
+
+```bash
+npx wrangler secret put RAILRADAR_API_KEY   # live trains, station boards, running status, coaches
+npm run deploy                             # builds in cloudflare mode, then deploys
+```
+
+The deployed build calls RailRadar through `/api/railradar`, so the API key is stored as a Worker
+secret and is never included in the browser bundle. `wrangler.jsonc` contains the Worker,
+static-assets and KV bindings. Timetable, coach, station-board and live-status responses are cached
+in KV so multiple visitors share one upstream request.
+
+To enable real email delivery, create an EmailJS account and set these Worker secrets:
+
+```bash
+npx wrangler secret put EMAILJS_SERVICE_ID
+npx wrangler secret put EMAILJS_TEMPLATE_ID
+npx wrangler secret put EMAILJS_PUBLIC_KEY
+npx wrangler secret put EMAILJS_PRIVATE_KEY
+```
+
+For real fares and seat availability, set `IRCTC_API_KEY` the same way. Without an IRCTC key, the
+ticket flow works normally but fares and availability are estimates. The KV namespace also stores
+rendered test-inbox emails for seven days.
+
+> **RailRadar quota:** the current free plan allows 100 requests per month. The proxy caches
+> aggressively, but heavy use can still exhaust that quota. Upgrade the RailRadar plan for
+> production traffic.
+
+## Optional: local RailRadar and IRCTC keys
+
+The app runs without them, but train data is then bundled sample data and fares/availability are
+estimates. To use live data locally, create `.env` **before** running `npm start` (a `VITE_` key is
+compiled into the browser bundle at build time, so use the Worker proxy for public deployments):
 
 ```env
 VITE_RAILRADAR_API_KEY=your_railradar_key

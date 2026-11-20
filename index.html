@@ -2,15 +2,119 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title data-default>Vite + React + TS</title>
-    <meta property="og:image" content="https://bolt.new/static/og_default.png" />
-    <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:image" content="https://bolt.new/static/og_default.png" />
+    <meta name="theme-color" content="#0B3C6B" />
+    <meta
+      name="description"
+      content="Rail Bandhu — a college project train ticket booking app with all-India station search, real trains from RailRadar, live running status and a sandbox payment gateway."
+    />
+    <title>Rail Bandhu — Train Ticket Booking</title>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div
+        id="boot-fallback"
+        style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;background:#F4F7FA;font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;color:#1B2733;"
+      >
+        <div style="max-width:520px;text-align:center;line-height:1.6;">
+          <div style="font-size:12px;letter-spacing:1.4px;color:#0B3C6B;font-weight:700;">RAIL BANDHU</div>
+          <p style="margin:10px 0 6px;font-size:15px;">Starting the app…</p>
+          <p style="margin:0;font-size:13px;color:#5B6B7A;">
+            If this message stays on screen, the dev server is not running. Open a terminal in the
+            project folder and run <code style="background:#E8EEF5;padding:2px 6px;border-radius:4px;">npm run dev:all</code>,
+            then reload this page.
+          </p>
+        </div>
+      </div>
+    </div>
+    <noscript>
+      <div style="padding:24px;font-family:system-ui,sans-serif;">
+        <strong>Rail Bandhu needs JavaScript.</strong> Please enable JavaScript in your browser to use
+        the train ticket booking app.
+      </div>
+    </noscript>
+    <script>
+      // Safety net: if the app bundle fails to load (server stopped, bad fresh
+      // clone, syntax error, blocking extension) show a readable message instead
+      // of a silent blank page. A first-load network hiccup is retried once.
+      (function () {
+        var RETRY_PARAM = "bootRetry";
+        var retried = false;
+        try {
+          retried = new URLSearchParams(window.location.search).has(RETRY_PARAM);
+        } catch (error) {
+          /* ignore */
+        }
+
+        function escapeHtml(text) {
+          return String(text).replace(/[&<>]/g, function (character) {
+            return { "&": "&amp;", "<": "&lt;", ">": "&gt;" }[character];
+          });
+        }
+
+        function showBootError(title, detail) {
+          var el = document.getElementById("boot-fallback");
+          if (!el) return;
+          el.innerHTML =
+            '<div style="max-width:600px;text-align:center;line-height:1.6;font-family:system-ui,sans-serif;">' +
+            '<div style="font-size:12px;letter-spacing:1.4px;color:#0B3C6B;font-weight:700;">RAIL BANDHU</div>' +
+            '<p style="margin:10px 0 6px;font-size:15px;font-weight:600;">' + escapeHtml(title) + "</p>" +
+            '<p style="margin:0 0 10px;font-size:13px;color:#5B6B7A;">The dev server may have stopped, the code failed to compile, ' +
+            'or a browser extension is blocking scripts on localhost. Check the terminal for errors, run ' +
+            '<code style="background:#E8EEF5;padding:2px 6px;border-radius:4px;">npm run dev:all</code>, then reload this page.</p>' +
+            (detail
+              ? '<pre style="margin:0;padding:10px;border-radius:6px;background:#F4F7FA;border:1px solid #E1E8F0;font-size:11px;color:#7A2E2E;white-space:pre-wrap;word-break:break-word;text-align:left;">' +
+                escapeHtml(detail) +
+                "</pre>"
+              : "") +
+            "</div>";
+        }
+
+        function retryOnce() {
+          var url = new URL(window.location.href);
+          url.searchParams.set(RETRY_PARAM, "1");
+          showBootError("Reconnecting…", "The first load was interrupted. Retrying automatically…");
+          window.setTimeout(function () {
+            window.location.replace(url.toString());
+          }, 1200);
+        }
+
+        window.addEventListener(
+          "error",
+          function (event) {
+            var target = event.target;
+            var isScript = target && target !== window && target.tagName === "SCRIPT";
+
+            if (isScript) {
+              if (!retried) {
+                retried = true;
+                retryOnce();
+                return;
+              }
+              showBootError("The app could not load.", "Failed to load: " + (target.src || "module script"));
+              return;
+            }
+
+            if (event.message) {
+              showBootError(
+                "The app crashed while starting.",
+                event.message + (event.filename ? "\n" + event.filename + ":" + event.lineno : "")
+              );
+            }
+          },
+          true
+        );
+
+        window.addEventListener("unhandledrejection", function (event) {
+          var reason = event.reason;
+          showBootError(
+            "The app crashed while starting.",
+            reason && reason.message ? reason.message : String(reason || "Unknown error")
+          );
+        });
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

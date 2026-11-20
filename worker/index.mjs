@@ -18,6 +18,7 @@
  */
 
 import { renderTicketEmail } from "../server/ticketEmail.mjs";
+import { renderTicketPdf } from "../server/ticketPdf.mjs";
 
 const JSON_HEADERS = {
   "content-type": "application/json; charset=utf-8",
@@ -419,12 +420,25 @@ async function handleTicketDocument(request) {
     return errorJson(error);
   }
 
-  const { html } = renderTicketEmail(ticket);
+  let pdf;
+  try {
+    pdf = await renderTicketPdf(ticket);
+  } catch (error) {
+    return json(
+      {
+        success: false,
+        code: "PDF_FAILED",
+        message: "The ticket PDF could not be generated.",
+      },
+      500
+    );
+  }
+
   const safePnr = String(ticket.pnr).replace(/[^A-Za-z0-9-]/g, "");
-  return new Response(html, {
+  return new Response(pdf, {
     headers: {
-      "content-type": "text/html; charset=utf-8",
-      "content-disposition": `attachment; filename="RailBandhu-Ticket-${safePnr}.html"`,
+      "content-type": "application/pdf",
+      "content-disposition": `attachment; filename="RailBandhu-Ticket-${safePnr}.pdf"`,
       "cache-control": "no-store",
       "x-robots-tag": "noindex",
     },

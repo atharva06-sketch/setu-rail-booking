@@ -6,6 +6,7 @@ import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import { renderTicketEmail } from "./ticketEmail.mjs";
+import { renderTicketPdf } from "./ticketPdf.mjs";
 
 dotenv.config();
 
@@ -188,10 +189,10 @@ app.get("/api/availability", async (req, res) => {
 });
 
 /* ------------------------------------------------------------------ */
-/* Ticket document download (ticket + invoice as one HTML file)        */
+/* Ticket document download (ticket + invoice as one PDF)              */
 /* ------------------------------------------------------------------ */
 
-app.post("/api/ticket-document", (req, res) => {
+app.post("/api/ticket-document", async (req, res) => {
   const { ticket } = req.body || {};
   if (!ticket || !ticket.pnr || !ticket.train) {
     return res
@@ -199,14 +200,14 @@ app.post("/api/ticket-document", (req, res) => {
       .json({ success: false, code: "BAD_TICKET", message: "Ticket details are missing." });
   }
 
-  const { html } = renderTicketEmail(ticket);
+  const pdf = await renderTicketPdf(ticket);
   const safePnr = String(ticket.pnr).replace(/[^A-Za-z0-9-]/g, "");
-  res.setHeader("Content-Type", "text/html; charset=utf-8");
+  res.setHeader("Content-Type", "application/pdf");
   res.setHeader(
     "Content-Disposition",
-    `attachment; filename="RailBandhu-Ticket-${safePnr}.html"`
+    `attachment; filename="RailBandhu-Ticket-${safePnr}.pdf"`
   );
-  res.send(html);
+  res.send(Buffer.from(pdf));
 });
 
 /* ------------------------------------------------------------------ */

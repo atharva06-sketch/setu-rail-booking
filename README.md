@@ -28,11 +28,11 @@ at `http://127.0.0.1:8787`.
   transaction ID and auth code. No real money moves.
 - **E-ticket + invoice** — PNR, passenger/seat table, fare breakup, payment details and a printable
   ticket.
-- **Email after booking** — the backend sends a full HTML ticket + invoice email. With no credentials
-  it is captured in an Ethereal test inbox and shown as a preview link. With SMTP or EmailJS it is
-  delivered to the passenger's real inbox.
-- **Download + print fallback** — the confirmation screen can download the ticket + invoice as a
-  standalone HTML document or print/save it as PDF, even with no email credentials.
+- **Email after booking** — the backend sends a full HTML ticket + invoice email when SMTP or
+  EmailJS is configured. Without credentials the rendered email is captured server-side for
+  debugging; the confirmation screen no longer displays it.
+- **Download + print fallback** — the confirmation screen downloads the ticket + invoice as a
+  standalone PDF or prints the on-screen ticket.
 - **Refresh-safe booking** — progress is saved to `localStorage` and restored after a browser refresh.
 
 ## Quick start (no keys)
@@ -60,8 +60,8 @@ the confirmation screen.
 | Coach layout / berths | Generated locally |
 | Fares / availability | Simulated, clearly labelled |
 | Payment / OTP | SetuPay sandbox (`123456`) |
-| Email | Ethereal test inbox + preview link |
-| Ticket document | Download/print always works |
+| Email | Captured server-side when no provider is configured |
+| Ticket document | Download PDF / print always works |
 
 The UI labels demo data everywhere so nothing is passed off as live.
 
@@ -74,27 +74,25 @@ Every meaningful change is saved to `localStorage` under `railbandhu:booking:v1`
 - selected seats and passenger/contact details
 - PNR, payment receipt and email state
 
-Refresh at any point and the app returns to the same screen with the same values. If the page was
-refreshed while an email was sending, the email card becomes a **Retry email** prompt instead of
-getting stuck. **Book another journey** clears the saved snapshot.
+Refresh at any point and the app returns to the same screen with the same values. Email state is
+saved too, but the confirmation screen always keeps the ticket PDF and print actions available.
+**Book another journey** clears the saved snapshot.
 
 ## Email: what actually happens
 
-After payment the app calls `POST /api/send-ticket` on the local backend.
+After payment the app calls `POST /api/send-ticket` on the backend.
 
 | Configuration | Result |
 | --- | --- |
-| No email credentials (default) | Full ticket + invoice HTML is captured by **Ethereal**, a free test inbox. The UI shows **Open test email**, which displays the real rendered email and its attachment. Nothing is delivered to the passenger's real address. |
+| No email credentials (default) | The full ticket + invoice HTML is rendered and captured server-side (Ethereal locally, Cloudflare preview in production). Nothing is delivered to the passenger's real address. |
 | `SMTP_HOST` + `SMTP_USER` + `SMTP_PASS` | The same email is delivered to the passenger's real inbox through your SMTP account. |
 | EmailJS keys | The same email is delivered through EmailJS. |
 
 The confirmation screen always offers:
 
-- **Open test email** — view the captured email and attachment
-- **Download ticket + invoice** — save a standalone `.html` document
-- **Open email draft** — open the user's mail app with the ticket text pre-filled
-- **Print / Save PDF** — print the on-screen ticket to PDF
-- **Retry email** — retry after a delivery failure
+- **Download ticket + invoice** — save a two-page PDF with the e-ticket and invoice
+- **Print / Save PDF** — print the on-screen ticket
+- **Book another journey** — start a fresh booking
 
 ### Enable real inbox delivery (optional, not needed for the demo)
 
@@ -215,11 +213,12 @@ visitor gets the complete demo mode.
 **Payment OTP:** the sandbox accepts `123456`. Card number `4111 1111 1111 1111`, any future expiry,
 CVV `123`.
 
-**Email says “Test inbox”:** that is expected without SMTP/EmailJS. Use **Download ticket + invoice**
-or configure SMTP as described above.
+**Email not delivered:** without SMTP/EmailJS the message is only captured server-side. Use
+**Download ticket + invoice** for a PDF copy, or configure SMTP as described above.
 
-**Email failed / retry:** click **Retry email** on the confirmation card. If the local API is offline,
-start the app with `npm start` (the email API is part of the same server).
+**Email failed / retry:** delivery is attempted automatically after payment. If the local API is
+offline, start the app with `npm start` (the email API is part of the same server). The ticket PDF
+download does not depend on email delivery.
 
 ## Scripts
 
@@ -241,8 +240,9 @@ start the app with `npm start` (the email API is part of the same server).
 server/
   index.mjs                  IRCTC proxy, email API, ticket download, static hosting
   ticketEmail.mjs            ticket + invoice HTML/text email template
+  ticketPdf.mjs              two-page e-ticket + invoice PDF generator
 src/
-  App.tsx                    booking flow, screens, persistence, email card
+  App.tsx                    booking flow, screens, persistence, PDF download
   components/
     StationPicker.tsx        all-India searchable station combobox
     StationBoard.tsx         demo/live arrivals-departures board
@@ -287,14 +287,13 @@ not valid for travel.
 
 ## Demo flow (for evaluation)
 
-1. Search **Raipur Jn (R) → New Delhi (NDLS)** for tomorrow.
-2. The results show the four bundled demo trains and a `DEMO DATA` chip.
-3. Pick **SL** on 18237. The seat screen shows a coach layout and simulated availability.
+1. Search **Raipur Jn (R) → Bilaspur Jn (BSP)** for tomorrow.
+2. The results show real RailRadar trains and a `REAL TRAINS · RAILRADAR` chip when a key is configured.
+3. Pick **SL** on a train. The seat screen shows a coach layout and simulated availability.
 4. Select a seat, fill passenger details and contact email/phone.
 5. Pay with UPI `name@bank`, card `4111 1111 1111 1111`, or any method; OTP is `123456`.
-6. On the confirmation screen, show the e-ticket and invoice. The **Ticket email** card explains
-   whether the message was delivered or captured in the test inbox, and offers the download/print
-   buttons.
+6. On the confirmation screen, show the e-ticket and invoice. Use **Download ticket + invoice** to
+   save the two-page PDF, or **Print / Save PDF**.
 7. Refresh the browser to show that the booking and PNR are restored.
 8. Open **Live rail radar**, try the **Station board** and **Track a train** (`18237`, `12441`,
    `12919`, `12854`) to show the labelled demo/live data.

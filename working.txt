@@ -112,12 +112,13 @@
      greyed out.
    - Sandbox payment gateway: UPI, card, net banking and wallet, with input
      validation, OTP, processing animation, transaction ID and auth code.
-   - E-ticket and invoice email: sent automatically after payment. With no
-     email credentials it is captured by a free Ethereal test inbox and shown
-     as a preview link. With SMTP or EmailJS it reaches a real inbox.
-   - Ticket document: the confirmation screen can download the ticket and
-     invoice as a standalone HTML file, or print/save the on-screen ticket as
-     PDF. This works even when email is not configured.
+   - E-ticket and invoice email: sent automatically after payment when SMTP
+     or EmailJS is configured. With no email credentials the rendered email is
+     captured server-side for debugging, but the confirmation screen no longer
+     displays it.
+   - Ticket document: the confirmation screen downloads the ticket and
+     invoice as a two-page PDF, or prints the on-screen ticket. This works even
+     when email is not configured.
    - Refresh persistence: booking progress is saved in localStorage and
      restored after a browser refresh.
    - Graceful fallbacks: missing keys never crash the app. It labels sample
@@ -224,10 +225,11 @@
  |    +-- index.mjs             Express server: IRCTC proxy, email API,
  |    |                         ticket download, static hosting
  |    +-- ticketEmail.mjs       Ticket + invoice HTML/text email template
+ |    +-- ticketPdf.mjs         Two-page e-ticket + invoice PDF generator
  |
  +-- src/
  |    +-- main.tsx              React entry point
- |    +-- App.tsx               Booking flow, screens, persistence, email card
+ |    +-- App.tsx               Booking flow, screens, persistence, PDF download
  |    +-- theme.tsx             Design tokens and global CSS
  |    +-- components/
  |    |    +-- StationPicker.tsx      Searchable all-India station combobox
@@ -333,7 +335,7 @@
    - handlePaymentSuccess() stores the receipt and PNR, switches to confirm,
      and calls sendTicketEmailNow() automatically.
    - The screen renders the e-ticket, passenger/seat table, fare invoice,
-     payment details, simulated QR code, email card, download button,
+     payment details, simulated QR code, PDF download button,
      print/save-PDF button and "Book another journey".
 
 
@@ -375,7 +377,7 @@
    - Refresh on the passenger step restores the same step, selected seat,
      passenger name/age and contact email/phone.
    - Refresh on the confirmation step restores the PNR, ticket, passenger,
-     download button and email preview link.
+     download button and PDF.
 
  Limitations:
 
@@ -505,7 +507,7 @@
    - Frontend fetch failures produce readable messages, not blank screens.
    - The backend returns JSON { success: false, code, message } with an HTTP
      status for bad input, missing configuration and upstream failures.
-   - Email failures leave the booking intact and show a Retry email button.
+   - Email failures leave the booking intact; the PDF download still works.
    - The confirmation screen and downloads do not depend on the email result.
 
 
@@ -554,9 +556,9 @@
 
  POST /api/ticket-document
    Body: { "ticket": { ...TicketEmailPayload } }
-   Returns the same ticket + invoice HTML with:
-     Content-Type: text/html; charset=utf-8
-     Content-Disposition: attachment; filename="RailBandhu-Ticket-<PNR>.html"
+   Returns a two-page ticket + invoice PDF with:
+     Content-Type: application/pdf
+     Content-Disposition: attachment; filename="RailBandhu-Ticket-<PNR>.pdf"
    Used by the Download ticket + invoice button.
 
  Any other non-/api path is served from dist/, with index.html as the SPA
@@ -622,11 +624,9 @@
    ETHEREAL (default when no credentials exist)
      Nodemailer creates a free test account at server startup. Messages are
      captured, not delivered to real inboxes. The API returns a public preview
-     URL:
-       https://ethereal.email/message/...
-     The confirmation card shows "Open test email". The preview displays the
-     real rendered email and attachment. This is enough to demonstrate the
-     entire email flow, but the passenger does not receive the message.
+     URL for debugging, but the confirmation screen no longer displays it.
+     This is enough to demonstrate the email flow, but the passenger does not
+     receive the message.
 
    NONE
      If EMAIL_TEST_MODE=false and no SMTP/EmailJS credentials exist, the API
@@ -637,8 +637,8 @@
    idle      preparing
    sending   request in flight
    sent      real delivery succeeded
-   preview   Ethereal capture succeeded; preview URL available
-   failed    readable error; Retry email button appears
+   preview   test capture succeeded; not shown on the confirmation screen
+   failed    delivery failed; the ticket PDF is still available
 
    If the page is refreshed while the state is "sending", the restored state
    becomes "failed" with a clear message, so the UI never hangs.
@@ -665,9 +665,9 @@
 
  12.5 TROUBLESHOOTING EMAIL
  --------------------------
-   "Test inbox" shown:
-     Expected with no SMTP/EmailJS credentials. Use Download ticket + invoice,
-     print/save PDF, or configure SMTP.
+   Email is not delivered:
+     Expected with no SMTP/EmailJS credentials. Use Download ticket + invoice
+     for a PDF copy, or configure SMTP.
    "EMAIL_NOT_CONFIGURED":
      EMAIL_TEST_MODE is false and no SMTP/EmailJS keys exist. Set credentials
      or set EMAIL_TEST_MODE=true.
@@ -686,28 +686,19 @@
  13. TICKET DOCUMENT DOWNLOAD AND PRINT
 ================================================================================
 
- The confirmation screen always provides three independent ways to keep the
+ The confirmation screen always provides two independent ways to keep the
  booking documents:
 
-   1. Open test email
-      Shows the Ethereal-captured email and its HTML attachment (demo mode).
+   1. Download ticket + invoice
+      POSTs to /api/ticket-document and saves RailBandhu-Ticket-<PNR>.pdf.
+      The two-page PDF contains a printable e-ticket and a booking invoice.
 
-   2. Download ticket + invoice
-      POSTs to /api/ticket-document and saves RailBandhu-Ticket-<PNR>.html.
-      The file is standalone: open it in any browser and print or save PDF.
-      It contains the same ticket and invoice as the email.
-
-   3. Print / Save PDF
+   2. Print / Save PDF
       Uses the browser print dialog on the on-screen ticket. Print styles hide
       navigation and buttons.
 
  These work without SMTP, EmailJS or any third-party service. They are the
  guaranteed fallback when email delivery is not configured.
-
- There is also "Open email draft", a mailto: link containing the plain-text
- ticket. It opens the user's mail application with the ticket details and the
- contact email pre-filled; the user presses Send. This is useful when a desktop
- mail client is configured, but it is not a replacement for server delivery.
 
 
 ================================================================================
@@ -900,8 +891,7 @@
    - seat maps, fares, payment and OTP work
    - the booking survives a browser refresh
    - the confirmation screen shows the ticket and invoice
-   - the email is captured in the Ethereal test inbox with a preview link
-   - the ticket can be downloaded as HTML or printed to PDF
+   - the ticket downloads as a two-page PDF or prints from the browser
 
  If port 8787 is busy:
    PowerShell:
@@ -940,11 +930,11 @@
    OTP          123456
 
  Email:
-   Default     Ethereal test inbox, preview link on the confirmation screen
+   Default     captured server-side for debugging; not shown on confirmation
    Real        configure SMTP or EmailJS (section 12.4)
 
  Ticket document:
-   Download ticket + invoice  -> RailBandhu-Ticket-<PNR>.html
+   Download ticket + invoice  -> RailBandhu-Ticket-<PNR>.pdf
    Print / Save PDF           -> browser print dialog
 
  Persistence:
@@ -1069,8 +1059,8 @@
    With SMTP or EmailJS:
      the ticket email is delivered to the passenger's real inbox.
 
- The UI labels the active mode on the search screen, results, seat screen,
- email card and footer.
+ The UI labels the active mode on the search screen, results, seat screen
+ and footer.
 
 
 ================================================================================
@@ -1113,11 +1103,11 @@
    [x] Payment flow completes with UPI and OTP 123456.
    [x] Confirmation screen shows PNR, ticket, invoice, download and print.
    [x] Refresh on the passenger step restores the same values.
-   [x] Refresh on the confirmation step restores the PNR and email preview.
+   [x] Refresh on the confirmation step restores the PNR and ticket.
    [x] /api/send-ticket returns mode "ethereal" with a preview URL.
    [x] The Ethereal preview contains the PNR, passenger and INVOICE section.
-   [x] /api/ticket-document returns 200 with an HTML attachment.
-   [x] The downloaded HTML contains the PNR, passenger and invoice.
+   [x] /api/ticket-document returns 200 with an application/pdf attachment.
+   [x] The downloaded PDF has two pages with the PNR, passenger and invoice.
    [x] npm start builds automatically through the prestart script.
    [x] /api/health responds and reports the email mode.
 

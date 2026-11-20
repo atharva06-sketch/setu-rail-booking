@@ -7,13 +7,10 @@ import {
   Check,
   ChevronLeft,
   Clock,
-  ExternalLink,
   Info,
   Lock,
-  Mail,
   MapPin,
   Printer,
-  RefreshCw,
   Search,
   Ticket,
   TrainFront,
@@ -65,7 +62,6 @@ import {
 } from "@/lib/irctc";
 import {
   downloadTicketDocument,
-  mailtoTicketLink,
   sendTicketEmail,
   type TicketEmailPayload,
 } from "@/lib/email";
@@ -445,7 +441,6 @@ export default function TrainBooking() {
   const [liveAvailability, setLiveAvailability] = useState<ParsedAvailability | null>(null);
   const [availabilityNote, setAvailabilityNote] = useState("");
   const [emailState, setEmailState] = useState<EmailState>({ status: "idle", message: "" });
-  const [resending, setResending] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [downloadError, setDownloadError] = useState("");
   const [hydrated, setHydrated] = useState(false);
@@ -1047,23 +1042,16 @@ export default function TrainBooking() {
     };
   }
 
-  async function sendTicketEmailNow(
-    nextPnr: string,
-    nextReceipt: PaymentReceipt,
-    resend = false
-  ) {
+  async function sendTicketEmailNow(nextPnr: string, nextReceipt: PaymentReceipt) {
     const payload = buildTicketPayload(nextPnr, nextReceipt);
     if (!payload) {
       setEmailState({ status: "failed", message: "Ticket details are incomplete." });
       return;
     }
 
-    if (resend) setResending(true);
     setEmailState({
       status: "sending",
-      message: resend
-        ? `Resending the e-ticket to ${payload.contact.email}…`
-        : `Sending the e-ticket and invoice to ${payload.contact.email}…`,
+      message: `Sending the e-ticket and invoice to ${payload.contact.email}…`,
     });
 
     try {
@@ -1085,8 +1073,6 @@ export default function TrainBooking() {
         status: "failed",
         message: error instanceof Error ? error.message : "The email could not be sent.",
       });
-    } finally {
-      if (resend) setResending(false);
     }
   }
 
@@ -2278,159 +2264,7 @@ export default function TrainBooking() {
                 <div>
                   <div style={{ fontWeight: 600, fontSize: 16, color: TEXT }}>Booking confirmed</div>
                   <div style={{ fontSize: 12, color: MUTED }}>
-                    {emailState.status === "sent"
-                      ? `Your e-ticket and invoice have been emailed to ${contact.email}.`
-                      : emailState.status === "preview"
-                        ? `Test email captured for ${contact.email} — open the preview below.`
-                        : emailState.status === "failed"
-                          ? "Booking confirmed, but the email needs attention. Retry below."
-                          : `Sending your e-ticket and invoice to ${contact.email}…`}
-                  </div>
-                </div>
-              </div>
-
-              <div
-                className="card no-print"
-                style={{
-                  padding: 14,
-                  marginBottom: 16,
-                  borderLeft: `3px solid ${
-                    emailState.status === "sent"
-                      ? GREEN
-                      : emailState.status === "preview"
-                        ? AMBER
-                        : emailState.status === "failed"
-                          ? RED
-                          : BLUE_DARK
-                  }`,
-                }}
-              >
-                <div className="flex items-start gap-2">
-                  <Mail
-                    size={18}
-                    color={
-                      emailState.status === "sent"
-                        ? GREEN
-                        : emailState.status === "preview"
-                          ? AMBER
-                          : emailState.status === "failed"
-                            ? RED
-                            : BLUE_DARK
-                    }
-                    style={{ marginTop: 2, flex: "0 0 auto" }}
-                  />
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: 600, fontSize: 13 }}>
-                      Ticket email{" "}
-                      <span style={{ fontWeight: 400, color: MUTED, fontSize: 11 }}>
-                        · {backend?.emailMode === "smtp"
-                          ? "SMTP"
-                          : backend?.emailMode === "emailjs"
-                            ? "EmailJS"
-                            : backend?.emailMode === "ethereal"
-                              ? "Ethereal test inbox"
-                              : backend?.emailMode === "preview"
-                                ? "Cloudflare preview inbox"
-                                : "not configured"}
-                      </span>
-                    </div>
-                    <div style={{ fontSize: 12, color: MUTED, marginTop: 2 }}>
-                      {emailState.message || "Preparing your e-ticket…"}
-                    </div>
-                    {(backend?.emailMode === "ethereal" ||
-                      backend?.emailMode === "preview") && (
-                      <div
-                        style={{
-                          marginTop: 8,
-                          padding: "8px 10px",
-                          borderRadius: 5,
-                          background: "#FDF4E3",
-                          border: "1px solid #F3D9A5",
-                          color: "#7A4E00",
-                          fontSize: 11,
-                          lineHeight: 1.5,
-                        }}
-                      >
-                        <strong>Test inbox.</strong> The email is captured and shown as a
-                        preview; it is not delivered to {contact.email}. Use{" "}
-                        <strong>Download ticket + invoice</strong> for the actual document, or
-                        configure EmailJS credentials to send to a real inbox.
-                        <details style={{ marginTop: 6 }}>
-                          <summary style={{ cursor: "pointer", fontWeight: 600 }}>
-                            How to send to a real inbox
-                          </summary>
-                          <ol style={{ margin: "6px 0 0 16px", padding: 0, lineHeight: 1.6 }}>
-                            <li>
-                              Create a free EmailJS account and an email template containing{" "}
-                              <code>{"{{message_html}}"}</code>, <code>{"{{subject}}"}</code> and{" "}
-                              <code>{"{{to_email}}"}</code>.
-                            </li>
-                            <li>
-                              Add the <code>EMAILJS_SERVICE_ID</code>,{" "}
-                              <code>EMAILJS_TEMPLATE_ID</code> and{" "}
-                              <code>EMAILJS_PUBLIC_KEY</code> values as Worker secrets (
-                              <code>wrangler secret put</code>).
-                            </li>
-                            <li>
-                              Redeploy. The same ticket email is then delivered to the passenger's
-                              real inbox.
-                            </li>
-                          </ol>
-                          <div style={{ marginTop: 4 }}>
-                            Not needed for the demo: the preview, download and print buttons
-                            already work.
-                          </div>
-                        </details>
-                      </div>
-                    )}
-                    {downloadError && (
-                      <div style={{ marginTop: 6, fontSize: 11, color: RED }}>{downloadError}</div>
-                    )}
-                    <div className="flex flex-wrap gap-2" style={{ marginTop: 8 }}>
-                      {emailState.previewUrl && (
-                        <a
-                          href={emailState.previewUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="btn-ghost flex items-center gap-1"
-                          style={{ padding: "6px 10px", fontSize: 12 }}
-                        >
-                          <ExternalLink size={13} /> Open test email
-                        </a>
-                      )}
-                      {emailState.status === "failed" && receipt && (
-                        <button
-                          type="button"
-                          onClick={() => void sendTicketEmailNow(pnr, receipt, true)}
-                          disabled={resending}
-                          className="btn-primary flex items-center gap-1"
-                          style={{ padding: "6px 10px", fontSize: 12 }}
-                        >
-                          <RefreshCw size={13} /> {resending ? "Retrying…" : "Retry email"}
-                        </button>
-                      )}
-                      {ticketEmailPayload && (
-                        <button
-                          type="button"
-                          onClick={() => void downloadTicket()}
-                          disabled={downloading}
-                          className="btn-ghost flex items-center gap-1"
-                          style={{ padding: "6px 10px", fontSize: 12 }}
-                        >
-                          <Ticket size={13} />{" "}
-                          {downloading ? "Preparing…" : "Download ticket + invoice"}
-                        </button>
-                      )}
-                      {ticketEmailPayload && (
-                        <a
-                          href={mailtoTicketLink(ticketEmailPayload)}
-                          className="btn-ghost flex items-center gap-1"
-                          style={{ padding: "6px 10px", fontSize: 12 }}
-                        >
-                          <Mail size={13} /> Open email draft
-                        </a>
-                      )}
-                    </div>
+                    Your ticket is ready below — download, print or save it as a PDF.
                   </div>
                 </div>
               </div>
@@ -2649,6 +2483,11 @@ export default function TrainBooking() {
                   <Search size={15} /> Book another journey
                 </button>
               </div>
+              {downloadError && (
+                <div className="no-print" style={{ marginTop: 8, fontSize: 12, color: RED }}>
+                  {downloadError}
+                </div>
+              )}
             </div>
           )}
         </div>

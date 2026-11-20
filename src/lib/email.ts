@@ -152,8 +152,8 @@ export function mailtoTicketLink(ticket: TicketEmailPayload): string {
 }
 
 /**
- * Downloads the ticket + invoice as a single HTML file. It opens in any
- * browser and prints cleanly to PDF, so the booking documents are always
+ * Downloads the ticket + invoice as a single PDF. The PDF contains a printable
+ * e-ticket page and an invoice page, so the booking documents are always
  * available even when no email credentials are configured.
  */
 export async function downloadTicketDocument(ticket: TicketEmailPayload): Promise<void> {
@@ -183,7 +183,7 @@ export async function downloadTicketDocument(ticket: TicketEmailPayload): Promis
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = `RailBandhu-Ticket-${ticket.pnr}.html`;
+  link.download = `RailBandhu-Ticket-${ticket.pnr}.pdf`;
   document.body.appendChild(link);
   link.click();
   link.remove();
